@@ -37,42 +37,56 @@ function updateUI() {
     renderDietCard();
 }
 
+// 계단 한 칸: 왼쪽 동그라미(번호·✓) + 운동 이름 + 상태 글자
+// level은 몇 번째 계단인지 (CSS에서 위로 갈수록 오른쪽으로 밀어 계단 모양을 만듦)
+function buildStep(level, icon, name, status) {
+    const node = document.createElement('div');
+    node.className = 'step-node';
+    node.setAttribute('role', 'button');
+    node.style.setProperty('--level', level);
+
+    const num = document.createElement('span');
+    num.className = 'step-num';
+    num.textContent = icon;
+    const info = document.createElement('div');
+    info.className = 'step-info';
+    const label = document.createElement('div');
+    label.className = 'step-label';
+    label.textContent = name;
+    const statusText = document.createElement('div');
+    statusText.className = 'step-status';
+    statusText.textContent = status;
+    info.append(label, statusText);
+    node.append(num, info);
+    return node;
+}
+
 function renderPath() {
     const pathContainer = document.getElementById('workout-path');
     pathContainer.replaceChildren();
 
     exercises.forEach((ex, idx) => {
-        const node = document.createElement('div');
-        node.className = 'step-node';
-        node.setAttribute('role', 'button');
+        let node;
         if (idx < completedSteps) {
+            node = buildStep(idx, '✓', ex.name, '완료');
             node.classList.add('completed');
-            node.textContent = '✓';
         } else if (idx === completedSteps) {
+            node = buildStep(idx, String(idx + 1), ex.name, '지금 도전!');
             node.classList.add('active');
-            node.textContent = String(idx + 1);
         } else {
-            node.textContent = String(idx + 1);
+            node = buildStep(idx, String(idx + 1), ex.name, '🔒 이전 단계 먼저');
+            node.classList.add('locked');
         }
-
-        const label = document.createElement('div');
-        label.className = 'step-label';
-        label.textContent = ex.name;
-        node.appendChild(label);
 
         node.addEventListener('click', () => openExerciseModal(idx));
         pathContainer.appendChild(node);
     });
 
     // 코스 마지막: 식단 보상 (모든 운동 완료 후 언제든 열람)
-    const reward = document.createElement('div');
-    reward.className = `step-node reward ${isDietUnlocked() ? '' : 'locked'}`;
-    reward.setAttribute('role', 'button');
-    reward.textContent = '🥗';
-    const rewardLabel = document.createElement('div');
-    rewardLabel.className = 'step-label';
-    rewardLabel.textContent = '식단 가이드';
-    reward.appendChild(rewardLabel);
+    const unlocked = isDietUnlocked();
+    const reward = buildStep(exercises.length, '🥗', '식단 가이드', unlocked ? '보상 열림' : `🔒 ${completedSteps}/${exercises.length}`);
+    reward.classList.add('reward');
+    if (!unlocked) reward.classList.add('locked');
     reward.addEventListener('click', () => {
         if (isDietUnlocked()) showDietModal(false);
         else showToast(`🔒 운동 ${exercises.length}개를 모두 끝내면 열려요 (${completedSteps}/${exercises.length})`);

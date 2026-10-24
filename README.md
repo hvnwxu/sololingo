@@ -70,7 +70,9 @@ sololingo/
 ├── sw.js             # 서비스 워커: 앱 파일·AI 모델 캐시
 ├── css/
 │   └── style.css     # 디자인
-├── js/               # ⚠️ index.html에서 아래 순서대로 불러옴
+├── js/
+│   ├── theme.js      # 라이트/다크 모드 (<head>에서 먼저 불러옴)
+│   │                 # ⚠️ 아래 파일들은 index.html 끝에서 이 순서대로 불러옴
 │   ├── config.js     # 설정값: 운동 목록, 난이도별 세트·횟수, 배지, 식단, 인식 기준값
 │   ├── storage.js    # 저장·불러오기, 날짜·연속 운동 일수 계산
 │   ├── state.js      # 공용 상태 값 (XP, 레벨, 운동 진행, 카메라)
@@ -98,7 +100,7 @@ python3 -m http.server 8000
 # 브라우저에서 http://localhost:8000 접속
 ```
 
-> 파일을 고친 뒤에는 `sw.js`의 `CACHE_NAME` 버전(예: `sololingo-v5` → `v6`)을 올려야 설치된 앱에도 새 버전이 반영됩니다.
+> 파일을 고친 뒤에는 `sw.js`의 `CACHE_NAME` 버전(예: `sololingo-v6` → `v7`)을 올려야 설치된 앱에도 새 버전이 반영됩니다.
 
 ## 앞으로 할 일
 

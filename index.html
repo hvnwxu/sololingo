@@ -15,25 +15,36 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
 
     <link rel="stylesheet" href="css/style.css">
+    <script src="js/theme.js"></script>
 </head>
 <body>
 
 <div class="app-container">
     <header>
-        <div class="select-box">
-            <select id="goal-select" onchange="updateWorkoutPlan()" aria-label="운동 목표">
-                <option value="diet">다이어트 🏃‍♀️</option>
-                <option value="muscle">몸 만들기 💪</option>
-                <option value="profile">바디프로필 🏆</option>
-            </select>
+        <div class="header-top">
+            <div class="brand"><span class="brand-logo" aria-hidden="true">🦉</span><span class="brand-name">SOLOLINGO</span></div>
+            <div class="header-actions">
+                <button class="install-btn" id="install-btn" type="button">📲 앱 설치</button>
+                <button class="theme-btn" id="theme-btn" type="button" onclick="toggleTheme()" aria-label="다크 모드로 바꾸기">🌙</button>
+            </div>
         </div>
-        <button class="install-btn" id="install-btn" type="button">📲 앱 설치</button>
-        <div class="select-box">
-            <select id="level-select" onchange="updateWorkoutPlan()" aria-label="난이도">
-                <option value="beginner">초급</option>
-                <option value="intermediate">중급</option>
-                <option value="advanced">고급</option>
-            </select>
+        <div class="header-filters">
+            <label class="select-box">
+                <span class="select-label">운동 목표</span>
+                <select id="goal-select" onchange="updateWorkoutPlan()">
+                    <option value="diet">다이어트 🏃‍♀️</option>
+                    <option value="muscle">몸 만들기 💪</option>
+                    <option value="profile">바디프로필 🏆</option>
+                </select>
+            </label>
+            <label class="select-box">
+                <span class="select-label">난이도</span>
+                <select id="level-select" onchange="updateWorkoutPlan()">
+                    <option value="beginner">초급</option>
+                    <option value="intermediate">중급</option>
+                    <option value="advanced">고급</option>
+                </select>
+            </label>
         </div>
     </header>
 
@@ -44,12 +55,16 @@
             <div class="xp-bar-container">
                 <div class="xp-bar-fill" id="xp-fill"></div>
             </div>
-            <span style="font-size: 0.75rem; color: #666;" id="xp-text">0 / 100 XP</span>
+            <span class="xp-text" id="xp-text">0 / 100 XP</span>
         </div>
     </div>
 
     <main>
         <section id="tab-workout" class="tab-content active">
+            <div class="path-head">
+                <h3>오늘의 코스</h3>
+                <p>한 계단씩 올라가며 운동을 열어요</p>
+            </div>
             <div class="path-container" id="workout-path"></div>
         </section>
 
@@ -59,14 +74,14 @@
                 <div class="quest-item">
                     <div>
                         <strong>스쿼트 30회 하기</strong>
-                        <p style="font-size: 0.8rem; color: #666;">보상: 20 XP</p>
+                        <p class="muted-sm">보상: 20 XP</p>
                     </div>
                     <button class="quest-btn" id="quest-btn-1" onclick="completeQuest(this, 'quest_1', 20)">완료</button>
                 </div>
                 <div class="quest-item">
                     <div>
                         <strong>물 2L 마시기</strong>
-                        <p style="font-size: 0.8rem; color: #666;">보상: 10 XP</p>
+                        <p class="muted-sm">보상: 10 XP</p>
                     </div>
                     <button class="quest-btn" id="quest-btn-2" onclick="completeQuest(this, 'quest_2', 10)">완료</button>
                 </div>
@@ -79,29 +94,29 @@
                     <div class="profile-pic">👤</div>
                     <div>
                         <h2>운동린이</h2>
-                        <p style="color: var(--secondary); font-weight: bold;" id="profile-level">Lv. 1 초보 코치</p>
+                        <p class="profile-level" id="profile-level">Lv. 1 초보 코치</p>
                     </div>
                 </div>
 
                 <h3>운동 통계</h3>
-                <div class="stats-grid" style="margin-top: 10px;">
+                <div class="stats-grid">
                     <div class="stat-card">
-                        <div style="font-size: 1.2rem; font-weight: bold;" id="stat-completed">0</div>
-                        <div style="font-size: 0.8rem; color: #666;">완료한 운동</div>
+                        <div class="stat-value" id="stat-completed">0</div>
+                        <div class="muted-sm">완료한 운동</div>
                     </div>
                     <div class="stat-card">
-                        <div style="font-size: 1.2rem; font-weight: bold;" id="stat-streak">1일</div>
-                        <div style="font-size: 0.8rem; color: #666;">연속 운동 일수</div>
+                        <div class="stat-value" id="stat-streak">1일</div>
+                        <div class="muted-sm">연속 운동 일수</div>
                     </div>
                 </div>
 
                 <h3>🥗 식단 가이드</h3>
                 <div id="diet-card"></div>
 
-                <h3 style="margin-top: 20px;">업적 및 배지</h3>
+                <h3>업적 및 배지</h3>
                 <div class="badges-container" id="badges-list"></div>
 
-                <button class="action-btn" onclick="copyAssessmentReport()" style="background-color: #1cb0f6; box-shadow: 0 4px 0 #0077b6; margin-top: 20px;">
+                <button class="action-btn action-btn-blue" onclick="copyAssessmentReport()">
                     📋 운동 기록 복사하기
                 </button>
                 <button class="reset-btn" onclick="resetAllData()">데이터 초기화</button>
@@ -170,9 +185,9 @@
     <div class="modal-content">
         <div id="diet-celebrate">
             <h2>🎉 축하합니다!</h2>
-            <p style="margin-top: 5px;">오늘의 모든 운동 코스를 완료하셨습니다!</p>
-            <p style="margin-top: 5px; font-size: 0.85rem; color: #666;">식단 가이드는 이제 프로필 탭에서 언제든 볼 수 있어요.</p>
-            <hr style="margin: 15px 0;">
+            <p class="celebrate-text">오늘의 모든 운동 코스를 완료하셨습니다!</p>
+            <p class="celebrate-text muted-sm">식단 가이드는 이제 프로필 탭에서 언제든 볼 수 있어요.</p>
+            <hr class="divider">
         </div>
         <h3>🥗 추천 식단 가이드</h3>
         <div id="diet-info"></div>
