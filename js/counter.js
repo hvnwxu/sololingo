@@ -1,16 +1,38 @@
 // 자세 판정: 각도 계산, 흔들림 보정, 운동별 횟수 세기
 
 let smoothed = {};           // 각도 흔들림을 줄이기 위한 평균값
-let thighRef = 0;            // 서 있을 때 허벅지 길이 (스쿼트 기준값)
 let plankLastGood = 0;
 let shallowDip = false;      // 내려가다 말고 다시 올라왔는지 ("조금 더 깊이" 안내용)
 
 function resetRecognitionState() {
     smoothed = {};
-    thighRef = 0;
     plankLastGood = 0;
     shallowDip = false;
     motionState = 'UP';
+}
+
+// 한쪽 다리가 얼마나 굽었는지: { ratio: 허벅지 세로 길이 비율(서 있을 때 1, 앉을수록 작아짐), kneeAngle(발목이 안 보이면 null) }
+// 허벅지의 세로 길이는 서 있으면 길고 앉으면 짧아짐 (정면·측면 모두 동작)
+// 몸통 길이로 나눠서, 카메라에서 멀어지거나 가까워져도 값이 변하지 않게 함
+// tag: 다리마다 기준값·평균값을 따로 기억하기 위한 이름 ('' / 'L' / 'R')
+function legBend(P, S, vis, tag) {
+    if (!vis(S.hip) || !vis(S.knee)) return null;
+    const thigh = Math.max(0, P[S.knee].y - P[S.hip].y);
+    const torso = vis(S.shoulder) ? Math.hypot(P[S.shoulder].x - P[S.hip].x, P[S.shoulder].y - P[S.hip].y) : 0;
+    let ratio;
+    if (torso > 0) {
+        const thighNorm = thigh / torso;
+        const ref = Math.max(thighNorm, (smoothed['ref' + tag] || 0) * 0.998); // 서 있을 때 값을 기억 (천천히 갱신)
+        smoothed['ref' + tag] = ref;
+        ratio = smooth('thigh' + tag, ref > 0 ? thighNorm / ref : 1);
+    } else {
+        // 어깨가 안 보이면 허벅지 길이만으로 판단 (이때는 너무 앞뒤로 움직이지 않기)
+        const ref = Math.max(thigh, (smoothed['rawRef' + tag] || 0) * 0.998);
+        smoothed['rawRef' + tag] = ref;
+        ratio = smooth('thigh' + tag, ref > 0 ? thigh / ref : 1);
+    }
+    const kneeAngle = vis(S.ankle) ? smooth('knee' + tag, calculateAngle(P[S.hip], P[S.knee], P[S.ankle])) : null;
+    return { ratio, kneeAngle };
 }
 
 // 운동별로 시작(카운트다운)에 필요한 관절이 보이는지
@@ -164,8 +186,15 @@ function onPoseResults(results) {
     }
 
     if (currentEx.type === 'squat' || currentEx.type === 'lunge') {
+        const isLunge = currentEx.type === 'lunge';
+        // 런지는 두 다리를 다 보고 더 많이 굽힌 다리(앞다리)로 판정
+        // (뒷다리는 무릎을 바닥까지 내려도 허벅지가 세로로 길게 남아서, 한쪽만 보면 못 셈)
+        const legs = (isLunge
+            ? [legBend(P, LEFT, vis, 'L'), legBend(P, RIGHT, vis, 'R')]
+            : [legBend(P, J, vis, '')]).filter(Boolean);
+
         // 엉덩이와 무릎만 보이면 인식 가능 (발목은 있으면 더 정확)
-        if (!vis(J.hip) || !vis(J.knee)) {
+        if (!legs.length) {
             motionState = 'UP';
             status.textContent = '엉덩이와 무릎이 화면에 보이게 해주세요';
             if (coachHint('joints', '엉덩이와 무릎이 화면에 보이게 해 주세요.')) setStageView('preview', true);
@@ -173,33 +202,22 @@ function onPoseResults(results) {
         }
         coachHint(null);
         setStageView('focus');
-        // 허벅지의 세로 길이: 서 있으면 길고, 앉으면 짧아짐 (정면·측면 모두 동작)
-        // 몸통 길이로 나눠서, 카메라에서 멀어지거나 가까워져도 값이 변하지 않게 함
-        const thigh = Math.max(0, P[J.knee].y - P[J.hip].y);
-        const torso = vis(J.shoulder) ? Math.hypot(P[J.shoulder].x - P[J.hip].x, P[J.shoulder].y - P[J.hip].y) : 0;
-        let ratio;
-        if (torso > 0) {
-            const thighNorm = thigh / torso;
-            thighRef = Math.max(thighNorm, thighRef * 0.998); // 서 있을 때 값을 기억 (천천히 갱신)
-            ratio = smooth('thigh', thighRef > 0 ? thighNorm / thighRef : 1);
-        } else {
-            // 어깨가 안 보이면 허벅지 길이만으로 판단 (이때는 너무 앞뒤로 움직이지 않기)
-            smoothed.rawRef = Math.max(thigh, (smoothed.rawRef || 0) * 0.998);
-            ratio = smooth('thigh', smoothed.rawRef > 0 ? thigh / smoothed.rawRef : 1);
-        }
+
+        const ratio = Math.min(...legs.map(leg => leg.ratio));
+        const knees = legs.map(leg => leg.kneeAngle).filter(angle => angle !== null);
+        const kneeAngle = knees.length ? Math.min(...knees) : null;
 
         let isDown;
         let isUp;
         let bent; // 눈에 띄게 굽히긴 했는지 (덜 앉음 판정용)
-        if (vis(J.ankle)) {
-            const kneeAngle = smooth('knee', calculateAngle(P[J.hip], P[J.knee], P[J.ankle]));
-            isDown = kneeAngle < 115 || ratio < 0.5;
+        if (kneeAngle !== null) {
+            isDown = kneeAngle < (isLunge ? LUNGE_DOWN_KNEE : 115) || ratio < (isLunge ? LUNGE_DOWN_RATIO : 0.5);
             isUp = kneeAngle > 150 && ratio > 0.75;
-            bent = kneeAngle < SHALLOW_KNEE || ratio < SHALLOW_RATIO;
+            bent = kneeAngle < (isLunge ? LUNGE_SHALLOW_KNEE : SHALLOW_KNEE) || ratio < (isLunge ? LUNGE_SHALLOW_RATIO : SHALLOW_RATIO);
         } else {
-            isDown = ratio < 0.55;
+            isDown = ratio < (isLunge ? LUNGE_DOWN_RATIO + 0.05 : 0.55);
             isUp = ratio > 0.8;
-            bent = ratio < SHALLOW_RATIO;
+            bent = ratio < (isLunge ? LUNGE_SHALLOW_RATIO : SHALLOW_RATIO);
         }
 
         if (isDown && motionState === 'UP') {
@@ -216,7 +234,7 @@ function onPoseResults(results) {
                 shallowDip = false;
                 coachNow('shallow', currentEx.type === 'squat' ? '조금 더 깊이 앉아 주세요.' : '조금 더 깊이 내려가 주세요.');
             }
-            status.textContent = vis(J.ankle) ? '좋아요! 앉았다 일어나세요' : '좋아요! 발이 안 보여도 셀 수 있어요';
+            status.textContent = kneeAngle !== null ? '좋아요! 앉았다 일어나세요' : '좋아요! 발이 안 보여도 셀 수 있어요';
         }
     } else if (currentEx.type === 'pushup') {
         if (![J.shoulder, J.elbow, J.wrist].every(vis)) {

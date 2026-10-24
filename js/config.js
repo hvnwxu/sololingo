@@ -17,10 +17,15 @@ const VOICE_MODES = [
     { id: 'off', icon: '🔇', label: '소리 끔' }
 ];
 const READY_HOLD_MS = 1000;   // 몸이 이 시간 동안 계속 보이면 카운트다운 시작
+const COUNTDOWN_LAST_MS = 600; // 카운트다운 '1' 다음 '시작!'까지 (3→2→1은 1초 간격)
 const COACH_HOLD_MS = 1500;   // 문제가 이 시간 넘게 계속될 때만 말로 안내 (잠깐 흔들린 건 무시)
 const COACH_REPEAT_MS = 5000; // 같은 안내는 이 간격보다 자주 말하지 않음
 const SHALLOW_RATIO = 0.65;   // 스쿼트·런지: 허벅지 비율이 이만큼 줄었는데 '앉음'까지 못 가면 "더 깊이"
 const SHALLOW_KNEE = 135;     // 스쿼트·런지: 무릎 각도 기준 (발목이 보일 때)
+const LUNGE_DOWN_RATIO = 0.6;     // 런지: 앞다리 허벅지 비율이 이보다 작으면 '내려감' (스쿼트 0.5보다 완화)
+const LUNGE_DOWN_KNEE = 125;      // 런지: 앞다리 무릎 각도가 이보다 작으면 '내려감' (스쿼트 115°보다 완화)
+const LUNGE_SHALLOW_RATIO = 0.72; // 런지: "더 깊이" 안내 기준
+const LUNGE_SHALLOW_KNEE = 140;
 const SHALLOW_ELBOW = 125;    // 푸쉬업: 팔꿈치가 이만큼 굽었는데 100°까지 못 가면 "더 깊이"
 const BODY_LINE_MIN = 145;    // 푸쉬업·플랭크: 어깨-엉덩이-무릎 각도가 이보다 작으면 몸이 꺾인 것
 

@@ -190,8 +190,7 @@ function handleOrientationChange() {
         if (selectedStepIndex === null || !cameraStream) return;
         const ex = exercises[selectedStepIndex];
         if (ex && ex.type !== 'burpee') {
-            smoothed = {};
-            thighRef = 0;
+            smoothed = {}; // 허벅지 기준값도 여기 들어 있어서 같이 초기화됨
             beginCamera(selectedStepIndex);
         }
     }, 400);

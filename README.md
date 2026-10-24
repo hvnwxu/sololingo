@@ -104,7 +104,7 @@ python3 -m http.server 8000
 # 브라우저에서 http://localhost:8000 접속
 ```
 
-> 파일을 고친 뒤에는 `sw.js`의 `CACHE_NAME` 버전(예: `sololingo-v8` → `v9`)을 올려야 설치된 앱에도 새 버전이 반영됩니다.
+> 파일을 고친 뒤에는 `sw.js`의 `CACHE_NAME` 버전(예: `sololingo-v9` → `v10`)을 올려야 설치된 앱에도 새 버전이 반영됩니다.
 
 ## 앞으로 할 일
 

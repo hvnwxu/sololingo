@@ -202,34 +202,34 @@ function startCountdown() {
     setStageView('countdown');
     let n = 3;
     const tick = () => {
-        if (selectedStepIndex === null || startPhase !== 'countdown') {
-            cancelCountdown();
-            return;
-        }
+        countdownTimer = null;
+        if (selectedStepIndex === null || startPhase !== 'countdown') return;
         if (n > 0) {
             setStageCenter(String(n), '준비');
             document.getElementById('ai-status').textContent = `${n}초 뒤 시작`;
             beep('tick');
             speakText(String(n), SPEAK.IMPORTANT);
             n--;
+            // '1' 다음은 조금 빨리 시작 (음성이 화면보다 살짝 늦게 나오므로 1초를 다 기다리면 늘어지게 느껴짐)
+            countdownTimer = setTimeout(tick, n > 0 ? 1000 : COUNTDOWN_LAST_MS);
             return;
         }
-        cancelCountdown();
         startPhase = 'go';
         resetRecognitionState(); // 지금 자세를 기준으로 다시 잼 (물러나는 동안의 값은 버림)
+        // 소리·번쩍·진동을 먼저 바로 내고, 음성은 그다음 (음성은 폰에 따라 늦게 나올 수 있음)
+        setStageView('focus');
+        flashRep();
         beep('go');
-        speakText('시작!', SPEAK.IMPORTANT);
         vibrate(200);
         document.getElementById('ai-status').textContent = '시작!';
-        setStageView('focus');
+        speakText('시작!', SPEAK.IMPORTANT);
     };
     tick();
-    countdownTimer = setInterval(tick, 1000);
 }
 
 function cancelCountdown() {
     if (countdownTimer) {
-        clearInterval(countdownTimer);
+        clearTimeout(countdownTimer);
         countdownTimer = null;
     }
     lostSince = 0;

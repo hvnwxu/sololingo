@@ -13,8 +13,8 @@ function speakText(text, priority = SPEAK.COUNT) {
     const busy = synth.speaking || synth.pending;
     if (busy && priority < speakingPriority) {
         if (priority === SPEAK.COACH) return;
-    } else {
-        synth.cancel();
+    } else if (busy) {
+        synth.cancel(); // 말하는 중일 때만 끊음 (안드로이드는 cancel 직후 다음 음성이 늦게 나옴)
     }
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ko-KR';
