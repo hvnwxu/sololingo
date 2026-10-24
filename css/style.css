@@ -152,19 +152,41 @@ header {
 }
 .select-box:focus-within { border-color: var(--secondary); }
 .select-label { font-size: 0.7rem; font-weight: 800; color: var(--text-faint); letter-spacing: 0.02em; }
+/* 실제 값을 담는 <select>는 숨김 (화면에는 아래 버튼·목록이 보임) */
+.native-select { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 /* 16px 미만이면 모바일 브라우저가 자동 확대하므로 16px로 맞춤 */
-.select-box select {
+.select-trigger {
     -webkit-appearance: none; appearance: none; width: 100%; padding: 0 22px 0 0;
-    border: 0; outline: none; background: transparent; cursor: pointer;
+    border: 0; outline: none; background: transparent; cursor: pointer; text-align: left;
     font-weight: 800; font-size: 16px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.select-box select option { background: var(--surface); color: var(--text); }
-/* 직접 그린 ▾ 화살표 */
+/* 직접 그린 ▾ 화살표 (열리면 ▴) */
 .select-box::after {
     content: ''; position: absolute; right: 14px; top: 50%; width: 7px; height: 7px; pointer-events: none;
     border-right: 2.5px solid var(--text-muted); border-bottom: 2.5px solid var(--text-muted);
-    transform: translateY(-20%) rotate(45deg);
+    transform: translateY(-20%) rotate(45deg); transition: transform 0.15s;
 }
+.select-box.open { border-color: var(--secondary); }
+.select-box.open::after { transform: translateY(15%) rotate(225deg); }
+
+/* 펼쳐지는 목록 */
+.select-menu {
+    display: none; position: absolute; top: calc(100% + 8px); left: -2px; right: -2px; z-index: 30;
+    list-style: none; padding: 6px; outline: none;
+    background: var(--surface); border: 2px solid var(--border); border-radius: 14px;
+    box-shadow: 0 12px 28px var(--shadow), 0 3px 0 var(--border);
+}
+.select-box.open .select-menu { display: block; animation: menu-in 0.12s ease-out; }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.select-option {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 10px; cursor: pointer;
+    font-weight: 700; font-size: 0.95rem; color: var(--text); white-space: nowrap;
+}
+.select-option.highlighted { background: var(--surface-2); }
+.select-option[aria-selected="true"] { background: var(--primary-soft); color: var(--primary-ink); }
+.select-option[aria-selected="true"]::after { content: '✓'; font-weight: 900; }
 
 /* ===== 코치 카드 + XP ===== */
 .xp-bar-container { background: var(--surface-3); border-radius: 10px; height: 12px; width: 100%; margin-top: 8px; overflow: hidden; }

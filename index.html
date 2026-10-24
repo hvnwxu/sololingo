@@ -29,22 +29,23 @@
             </div>
         </div>
         <div class="header-filters">
-            <label class="select-box">
-                <span class="select-label">운동 목표</span>
-                <select id="goal-select" onchange="updateWorkoutPlan()">
+            <!-- 실제 값은 숨긴 <select>에 있고, 보이는 버튼·목록은 setupSelectMenus()가 만듦 -->
+            <div class="select-box">
+                <span class="select-label" id="goal-label">운동 목표</span>
+                <select id="goal-select" onchange="updateWorkoutPlan()" aria-labelledby="goal-label">
                     <option value="diet">다이어트 🏃‍♀️</option>
                     <option value="muscle">몸 만들기 💪</option>
                     <option value="profile">바디프로필 🏆</option>
                 </select>
-            </label>
-            <label class="select-box">
-                <span class="select-label">난이도</span>
-                <select id="level-select" onchange="updateWorkoutPlan()">
+            </div>
+            <div class="select-box">
+                <span class="select-label" id="level-label">난이도</span>
+                <select id="level-select" onchange="updateWorkoutPlan()" aria-labelledby="level-label">
                     <option value="beginner">초급</option>
                     <option value="intermediate">중급</option>
                     <option value="advanced">고급</option>
                 </select>
-            </label>
+            </div>
         </div>
     </header>
 

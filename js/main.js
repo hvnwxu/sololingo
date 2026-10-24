@@ -4,6 +4,7 @@ function init() {
     loadProgress();
     checkBadges(false);
     updateUI();
+    setupSelectMenus();
     setupInstallButton();
     registerServiceWorker();
 }

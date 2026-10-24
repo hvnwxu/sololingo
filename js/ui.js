@@ -152,6 +152,112 @@ function closeDietModal() { document.getElementById('diet-modal').style.display 
 
 function updateWorkoutPlan() { dietViewGoal = null; renderPath(); renderDietCard(); }
 
+// ===== 상단 목표·난이도 선택 =====
+// 브라우저 기본 드롭다운 목록은 CSS로 꾸밀 수 없어서, 숨긴 <select>와 연결된 버튼·목록을 직접 만듦
+// (값은 계속 <select>에 있으므로 .value를 읽는 다른 코드는 그대로 동작)
+function setupSelectMenus() {
+    document.querySelectorAll('.select-box').forEach(box => {
+        const select = box.querySelector('select');
+        if (!select || box.querySelector('.select-trigger')) return;
+        const labelId = select.getAttribute('aria-labelledby');
+
+        select.classList.add('native-select');
+        select.tabIndex = -1;
+        select.setAttribute('aria-hidden', 'true');
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'select-trigger';
+        trigger.id = `${select.id}-trigger`;
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.setAttribute('aria-labelledby', `${labelId} ${trigger.id}`);
+
+        const menu = document.createElement('ul');
+        menu.className = 'select-menu';
+        menu.id = `${select.id}-menu`;
+        menu.tabIndex = -1;
+        menu.setAttribute('role', 'listbox');
+        menu.setAttribute('aria-labelledby', labelId);
+        trigger.setAttribute('aria-controls', menu.id);
+
+        let activeIndex = select.selectedIndex;
+        const items = [...select.options].map((option, i) => {
+            const item = document.createElement('li');
+            item.className = 'select-option';
+            item.id = `${menu.id}-${i}`;
+            item.setAttribute('role', 'option');
+            item.textContent = option.text;
+            item.addEventListener('click', () => { choose(i); close(true); });
+            item.addEventListener('mousemove', () => highlight(i));
+            menu.appendChild(item);
+            return item;
+        });
+
+        // 버튼 글자와 ✓ 표시를 <select>의 현재 값에 맞춤
+        const sync = () => {
+            trigger.textContent = select.selectedOptions[0]?.text || '';
+            items.forEach((item, i) => item.setAttribute('aria-selected', String(i === select.selectedIndex)));
+        };
+        const highlight = i => {
+            activeIndex = i;
+            items.forEach((item, j) => item.classList.toggle('highlighted', j === i));
+            menu.setAttribute('aria-activedescendant', items[i].id);
+        };
+        const choose = i => {
+            if (i === select.selectedIndex) return;
+            select.selectedIndex = i;
+            select.dispatchEvent(new Event('change')); // onchange="updateWorkoutPlan()" 실행
+            sync();
+        };
+        const open = () => {
+            closeSelectMenus();
+            box.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+            highlight(select.selectedIndex);
+            menu.focus();
+        };
+        const close = focusTrigger => {
+            box.classList.remove('open');
+            trigger.setAttribute('aria-expanded', 'false');
+            if (focusTrigger) trigger.focus();
+        };
+        box.closeMenu = close;
+
+        // 이름표("운동 목표")를 눌러도 열리게 함
+        box.addEventListener('click', event => {
+            if (event.target === box || event.target.classList.contains('select-label')) open();
+        });
+        trigger.addEventListener('click', () => (box.classList.contains('open') ? close(false) : open()));
+        trigger.addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); open(); }
+        });
+        menu.addEventListener('keydown', event => {
+            if (event.key === 'Tab') { close(false); return; }
+            if (event.key === 'ArrowDown') highlight(Math.min(items.length - 1, activeIndex + 1));
+            else if (event.key === 'ArrowUp') highlight(Math.max(0, activeIndex - 1));
+            else if (event.key === 'Home') highlight(0);
+            else if (event.key === 'End') highlight(items.length - 1);
+            else if (event.key === 'Enter' || event.key === ' ') { choose(activeIndex); close(true); }
+            else if (event.key === 'Escape') close(true);
+            else return;
+            event.preventDefault();
+        });
+        menu.addEventListener('focusout', event => { if (!box.contains(event.relatedTarget)) close(false); });
+
+        box.append(trigger, menu);
+        sync();
+    });
+}
+
+function closeSelectMenus() {
+    document.querySelectorAll('.select-box.open').forEach(box => box.closeMenu(false));
+}
+
+document.addEventListener('click', event => {
+    if (!event.target.closest('.select-box')) closeSelectMenus();
+});
+
 document.addEventListener('visibilitychange', () => {
     if (document.hidden && selectedStepIndex !== null) closeWorkoutModal();
     if (!document.hidden) {
