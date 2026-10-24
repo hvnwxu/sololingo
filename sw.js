@@ -1,9 +1,21 @@
 // SOLOLINGO 서비스 워커: 앱을 설치 가능하게 하고, 한 번 연 뒤에는 빠르게 열리도록 파일을 저장해 둡니다.
-const CACHE_NAME = 'sololingo-v4';
+const CACHE_NAME = 'sololingo-v5';
 const APP_FILES = [
   './',
   './index.html',
   './manifest.json',
+  './css/style.css',
+  './js/config.js',
+  './js/storage.js',
+  './js/state.js',
+  './js/utils.js',
+  './js/camera.js',
+  './js/counter.js',
+  './js/workout.js',
+  './js/game.js',
+  './js/ui.js',
+  './js/pwa.js',
+  './js/main.js',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
