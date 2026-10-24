@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>SOLOLINGO - AI 홈트레이닝</title>
+
+    <!-- 홈 화면 설치(PWA) 설정 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#58cc02">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
+    <!-- MediaPipe Pose AI 라이브러리 (버전 고정: 라이브러리가 업데이트돼도 앱이 깨지지 않도록) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --primary: #58cc02;
+            --primary-dark: #46a302;
+            --secondary: #1cb0f6;
+            --accent: #ffc800;
+            --text: #3c3c3c;
+            --bg: #f7f7f7;
+            --card-bg: #ffffff;
+            --border-color: #e5e5e5;
+            --nav-h: 65px;
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-top: env(safe-area-inset-top, 0px);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; -webkit-tap-highlight-color: transparent; }
+        html, body { overscroll-behavior-y: none; }
+        body { background-color: var(--bg); color: var(--text); display: flex; justify-content: center; min-height: 100vh; min-height: 100dvh; }
+
+        .app-container {
+            width: 100%; max-width: 480px; background-color: var(--card-bg);
+            display: flex; flex-direction: column; position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.05); min-height: 100vh; min-height: 100dvh;
+        }
+
+        header {
+            padding: calc(12px + var(--safe-top)) 16px 12px; border-bottom: 2px solid var(--border-color);
+            display: flex; justify-content: space-between; align-items: center; gap: 8px;
+            background-color: #fff; position: sticky; top: 0; z-index: 10;
+        }
+
+        /* 16px 미만이면 모바일 브라우저가 자동 확대하므로 16px로 맞춤 */
+        .select-box select {
+            padding: 8px 10px; border-radius: 12px; border: 2px solid var(--border-color);
+            font-weight: bold; font-size: 16px; color: var(--text); outline: none; background: #fff; cursor: pointer;
+        }
+
+        .install-btn {
+            display: none; background: var(--secondary); color: #fff; border: 0; border-radius: 12px;
+            padding: 9px 10px; font-weight: bold; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+        }
+
+        .xp-bar-container { background: #eee; border-radius: 10px; height: 12px; width: 100%; margin-top: 5px; overflow: hidden; }
+        .xp-bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width 0.3s ease; }
+
+        .coach-card {
+            background-color: #e5f6ff; border: 2px solid var(--secondary);
+            border-radius: 16px; padding: 15px; margin: 15px 16px 5px;
+            display: flex; align-items: center; gap: 15px;
+        }
+        .coach-card > div:last-child { flex: 1; }
+        .coach-avatar { font-size: 2.5rem; }
+        .coach-message { font-size: 0.9rem; font-weight: 600; color: #0077b6; }
+
+        /* 하단 메뉴 높이만큼 여백을 둬서 마지막 내용이 가려지지 않게 함 */
+        main { flex: 1; padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 20px); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .path-container { display: flex; flex-direction: column; align-items: center; padding: 30px 0; gap: 30px; }
+
+        .step-node {
+            width: 75px; height: 75px; border-radius: 50%; background-color: #e5e5e5;
+            border: 4px solid #ccc; display: flex; justify-content: center; align-items: center;
+            font-size: 1.5rem; font-weight: bold; color: #888; cursor: pointer; flex-shrink: 0;
+            position: relative; box-shadow: 0 6px 0 #bbb; transition: transform 0.1s; user-select: none;
+        }
+
+        .step-node:active { transform: translateY(4px); box-shadow: 0 2px 0 #bbb; }
+        .step-node.active { background-color: var(--primary); border-color: var(--primary-dark); color: white; box-shadow: 0 6px 0 var(--primary-dark); }
+        .step-node.completed { background-color: var(--accent); border-color: #d4a000; color: white; box-shadow: 0 6px 0 #d4a000; }
+
+        .step-label { position: absolute; bottom: -24px; white-space: nowrap; font-size: 0.8rem; font-weight: bold; color: var(--text); }
+
+        /* 지그재그 배치: transform 대신 margin을 써서 눌렀을 때 버튼이 튀지 않게 함 */
+        .step-node:nth-child(5n+2) { margin-left: 80px; }
+        .step-node:nth-child(5n+3) { margin-left: 140px; }
+        .step-node:nth-child(5n+4) { margin-left: 60px; }
+        .step-node:nth-child(5n+5) { margin-right: 80px; }
+
+        .quest-list { padding: 20px 16px; display: flex; flex-direction: column; gap: 15px; }
+        .quest-item { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 16px; padding: 15px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .quest-btn { background: var(--primary); color: white; border: none; padding: 10px 18px; border-radius: 12px; font-weight: bold; font-size: 0.95rem; cursor: pointer; }
+        .quest-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+        .profile-container { padding: 20px 16px; }
+        .profile-header { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
+        .profile-pic { width: 70px; height: 70px; border-radius: 50%; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 2rem; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .stat-card { border: 2px solid var(--border-color); border-radius: 12px; padding: 15px; text-align: center; }
+
+        .badges-container { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+        .badge {
+            padding: 10px 14px; border-radius: 16px; font-size: 0.85rem; font-weight: bold;
+            display: flex; flex-direction: column; gap: 4px; border: 2px solid #ccc;
+            background: #f0f0f0; color: #888; opacity: 0.5; transition: all 0.3s ease;
+        }
+        .badge.unlocked {
+            background: #fff3bf; border-color: #ffe066; color: #d4a000;
+            opacity: 1; transform: scale(1.02); box-shadow: 0 4px 10px rgba(255, 200, 0, 0.3);
+        }
+
+        /* 하단 메뉴: 화면 아래에 항상 고정 */
+        nav {
+            position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+            width: 100%; max-width: 480px; height: calc(var(--nav-h) + var(--safe-bottom));
+            padding-bottom: var(--safe-bottom); z-index: 20;
+            background: white; border-top: 2px solid var(--border-color);
+            display: flex; justify-content: space-around; align-items: center;
+        }
+
+        .tab-btn { background: none; border: none; font-weight: bold; color: #888; font-size: 0.9rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; height: 100%; justify-content: center; }
+        .tab-btn span:first-child { font-size: 1.3rem; }
+        .tab-btn.active { color: var(--secondary); }
+
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100;
+        }
+
+        .modal-content {
+            background: white; width: 90%; max-width: 400px;
+            border-radius: 20px; padding: 20px; max-height: 90vh; overflow-y: auto; position: relative;
+        }
+
+        .instruction-list { padding-left: 20px; }
+        .instruction-list li { margin: 5px 0; }
+
+        /* ===== 운동 화면 (전체 화면) ===== */
+        #workout-modal { background: #111; align-items: stretch; }
+        .workout-screen {
+            width: 100%; max-width: 480px; height: 100%; margin: 0 auto;
+            display: flex; flex-direction: column; background: #111; color: #fff;
+        }
+        .ws-top {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: calc(10px + var(--safe-top)) 12px 10px;
+        }
+        .ws-top h2 { font-size: 1.15rem; flex: 1; text-align: center; }
+        .ws-btn {
+            background: rgba(255,255,255,0.14); color: #fff; border: 0; border-radius: 12px;
+            padding: 10px 12px; font-weight: 700; font-size: 0.9rem; cursor: pointer; min-width: 64px;
+        }
+
+        .stage { position: relative; flex: 1; min-height: 0; background: #000; overflow: hidden; }
+        /* 영상은 숨기고, canvas에 영상+뼈대를 함께 그려서 위치가 어긋나지 않게 함 */
+        #webcam-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+        #output-canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+        #output-canvas.mirror { transform: scaleX(-1); }
+
+        .camera-overlay {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            max-width: calc(100% - 24px); text-align: center;
+            background: rgba(0, 0, 0, 0.65); color: #fff;
+            padding: 8px 14px; border-radius: 20px; font-size: 0.9rem; font-weight: bold;
+        }
+
+        /* 2m 떨어져서도 보이는 큰 숫자 */
+        .big-counter {
+            position: absolute; left: 0; right: 0; bottom: 0; padding: 40px 18px 14px;
+            display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none;
+            background: linear-gradient(transparent, rgba(0,0,0,0.7));
+        }
+        .big-reps { font-size: 5rem; font-weight: 900; line-height: 1; color: #fff; }
+        .big-reps small { font-size: 1.8rem; color: #ccc; font-weight: 800; }
+        .big-set { font-size: 1.3rem; font-weight: 800; color: var(--accent); text-align: right; }
+        .pop { animation: pop 0.25s ease; }
+        @keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(1.25); color: var(--primary); } 100% { transform: scale(1); } }
+
+        .rest-overlay {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(28, 176, 246, 0.95); z-index: 20;
+            flex-direction: column; justify-content: center; align-items: center;
+            color: white; text-align: center; padding: 20px;
+        }
+        .rest-timer-num { font-size: 6rem; font-weight: 900; margin: 10px 0; }
+        .skip-btn {
+            background: white; color: var(--secondary); border: none;
+            padding: 14px 24px; border-radius: 14px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 10px;
+        }
+
+        .ws-bottom {
+            background: #fff; color: var(--text); border-radius: 20px 20px 0 0;
+            padding: 14px 16px calc(14px + var(--safe-bottom));
+        }
+        .ws-bottom details { font-size: 0.9rem; line-height: 1.45; color: #555; }
+        .ws-bottom summary { font-weight: 700; color: var(--text); cursor: pointer; padding: 4px 0; }
+        .ws-meta { font-size: 0.85rem; color: #666; margin: 6px 0 2px; }
+        .privacy-note { font-size: 0.78rem; line-height: 1.5; color: #777; margin-top: 6px; }
+
+        .reset-btn {
+            background: #ff4b4b; color: white; border: none; padding: 10px 14px;
+            border-radius: 10px; font-weight: bold; font-size: 0.85rem; cursor: pointer; margin-top: 15px; width: 100%;
+        }
+
+        .action-btn {
+            width: 100%; padding: 14px; background: var(--primary); color: white;
+            border: none; border-radius: 12px; font-size: 1rem; font-weight: bold;
+            cursor: pointer; box-shadow: 0 4px 0 var(--primary-dark); margin-top: 10px;
+        }
+
+        .diet-section { background: #f8f9fa; border-radius: 10px; padding: 10px; margin-top: 10px; font-size: 0.9rem; }
+
+        /* alert 대신 쓰는 알림 (운동 흐름을 멈추지 않음) */
+        .toast {
+            position: fixed; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px);
+            transform: translateX(-50%) translateY(20px); opacity: 0; z-index: 300;
+            background: #333; color: #fff; padding: 12px 18px; border-radius: 14px;
+            font-weight: 700; font-size: 0.9rem; max-width: calc(100% - 32px); text-align: center;
+            transition: opacity 0.25s, transform 0.25s; pointer-events: none;
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* 폰 위치 안내 */
+        .place-guide {
+            display: none; position: absolute; inset: 0; z-index: 15;
+            background: rgba(0,0,0,0.55); justify-content: center; align-items: center; padding: 14px;
+        }
+        .pg-card {
+            background: #fff; color: var(--text); border-radius: 18px; padding: 16px;
+            width: 100%; max-width: 330px; max-height: 100%; overflow-y: auto; text-align: center;
+        }
+        .pg-card svg { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto 8px; }
+        .pg-card h3 { font-size: 1.05rem; margin-bottom: 8px; }
+        .pg-card ul { text-align: left; padding-left: 20px; font-size: 0.9rem; line-height: 1.5; color: #555; }
+        .pg-card .pg-caption { font-size: 0.75rem; color: #999; margin-bottom: 6px; }
+        .link-btn { background: none; border: 0; color: var(--secondary); font-weight: 700; font-size: 0.9rem; cursor: pointer; padding: 6px 0; }
+
+        /* 식단 가이드 (프로필) */
+        .diet-card { border: 2px solid var(--border-color); border-radius: 14px; padding: 14px; margin-top: 10px; }
+        .diet-card.locked { color: #999; background: #fafafa; text-align: center; }
+        .diet-card .diet-section { margin-top: 0; }
+        .diet-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+        .diet-tab { border: 2px solid var(--border-color); background: #fff; border-radius: 10px; padding: 6px 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer; color: #777; }
+        .diet-tab.active { border-color: var(--primary); color: var(--primary-dark); background: #f0fbe6; }
+
+        /* 코스 마지막 보상 노드 (식단) */
+        .step-node.reward { background: #fff3bf; border-color: #ffe066; box-shadow: 0 6px 0 #e0b800; font-size: 2rem; }
+        .step-node.reward.locked { background: #eee; border-color: #ccc; box-shadow: 0 6px 0 #bbb; filter: grayscale(1); opacity: 0.7; }
+
+        /* 폰을 가로로 눕혔을 때(플랭크·푸쉬업): 카메라를 크게, 버튼은 오른쪽으로 */
+        @media (orientation: landscape) and (max-height: 600px) {
+            .workout-screen { max-width: none; display: grid; grid-template-columns: 1fr 240px; grid-template-rows: auto 1fr; }
+            .ws-top { grid-column: 1 / -1; padding: 6px 12px; }
+            .stage { grid-column: 1; grid-row: 2; }
+            .ws-bottom { grid-column: 2; grid-row: 2; border-radius: 0; overflow-y: auto; padding: 12px; }
+            .big-reps { font-size: 3.6rem; }
+            .big-reps small { font-size: 1.3rem; }
+            .rest-timer-num { font-size: 4rem; }
+            .place-guide { padding: 8px; }
+            .pg-card { max-width: 560px; display: grid; grid-template-columns: 170px 1fr; column-gap: 12px; align-items: center; text-align: left; padding: 12px; }
+            .pg-card #pg-figure { grid-row: 1 / span 2; }
+            .pg-card h3 { font-size: 0.95rem; margin-bottom: 4px; }
+            .pg-card ul { font-size: 0.8rem; line-height: 1.4; }
+            .pg-card .action-btn { grid-column: 1 / -1; margin-top: 8px; padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header>
+        <div class="select-box">
+            <select id="goal-select" onchange="updateWorkoutPlan()" aria-label="운동 목표">
+                <option value="diet">다이어트 🏃‍♀️</option>
+                <option value="muscle">몸 만들기 💪</option>
+                <option value="profile">바디프로필 🏆</option>
+            </select>
+        </div>
+        <button class="install-btn" id="install-btn" type="button">📲 앱 설치</button>
+        <div class="select-box">
+            <select id="level-select" onchange="updateWorkoutPlan()" aria-label="난이도">
+                <option value="beginner">초급</option>
+                <option value="intermediate">중급</option>
+                <option value="advanced">고급</option>
+            </select>
+        </div>
+    </header>
+
+    <div class="coach-card">
+        <div class="coach-avatar">🦉</div>
+        <div>
+            <div class="coach-message" id="coach-text">"무리하지 말고, 정확한 자세부터 연습해요!"</div>
+            <div class="xp-bar-container">
+                <div class="xp-bar-fill" id="xp-fill"></div>
+            </div>
+            <span style="font-size: 0.75rem; color: #666;" id="xp-text">0 / 100 XP</span>
+        </div>
+    </div>
+
+    <main>
+        <section id="tab-workout" class="tab-content active">
+            <div class="path-container" id="workout-path"></div>
+        </section>
+
+        <section id="tab-quest" class="tab-content">
+            <div class="quest-list">
+                <h3>일일 퀘스트</h3>
+                <div class="quest-item">
+                    <div>
+                        <strong>스쿼트 30회 하기</strong>
+                        <p style="font-size: 0.8rem; color: #666;">보상: 20 XP</p>
+                    </div>
+                    <button class="quest-btn" id="quest-btn-1" onclick="completeQuest(this, 'quest_1', 20)">완료</button>
+                </div>
+                <div class="quest-item">
+                    <div>
+                        <strong>물 2L 마시기</strong>
+                        <p style="font-size: 0.8rem; color: #666;">보상: 10 XP</p>
+                    </div>
+                    <button class="quest-btn" id="quest-btn-2" onclick="completeQuest(this, 'quest_2', 10)">완료</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-profile" class="tab-content">
+            <div class="profile-container">
+                <div class="profile-header">
+                    <div class="profile-pic">👤</div>
+                    <div>
+                        <h2>운동린이</h2>
+                        <p style="color: var(--secondary); font-weight: bold;" id="profile-level">Lv. 1 초보 코치</p>
+                    </div>
+                </div>
+
+                <h3>운동 통계</h3>
+                <div class="stats-grid" style="margin-top: 10px;">
+                    <div class="stat-card">
+                        <div style="font-size: 1.2rem; font-weight: bold;" id="stat-completed">0</div>
+                        <div style="font-size: 0.8rem; color: #666;">완료한 운동</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="font-size: 1.2rem; font-weight: bold;" id="stat-streak">1일</div>
+                        <div style="font-size: 0.8rem; color: #666;">연속 운동 일수</div>
+                    </div>
+                </div>
+
+                <h3>🥗 식단 가이드</h3>
+                <div id="diet-card"></div>
+
+                <h3 style="margin-top: 20px;">업적 및 배지</h3>
+                <div class="badges-container" id="badges-list"></div>
+
+                <button class="action-btn" onclick="copyAssessmentReport()" style="background-color: #1cb0f6; box-shadow: 0 4px 0 #0077b6; margin-top: 20px;">
+                    📋 운동 기록 복사하기
+                </button>
+                <button class="reset-btn" onclick="resetAllData()">데이터 초기화</button>
+            </div>
+        </section>
+    </main>
+
+    <nav>
+        <button class="tab-btn" onclick="switchTab('quest', this)"><span>📋</span><span>퀘스트</span></button>
+        <button class="tab-btn active" onclick="switchTab('workout', this)"><span>🏋️‍♂️</span><span>운동</span></button>
+        <button class="tab-btn" onclick="switchTab('profile', this)"><span>👤</span><span>프로필</span></button>
+    </nav>
+</div>
+
+<!-- 운동 화면 (전체 화면) -->
+<div class="modal" id="workout-modal">
+    <div class="workout-screen">
+        <div class="ws-top">
+            <button class="ws-btn" type="button" onclick="closeWorkoutModal()" aria-label="운동 창 닫기">✕ 닫기</button>
+            <h2 id="modal-title">스쿼트</h2>
+            <button class="ws-btn" type="button" id="flip-btn" onclick="flipCamera()" aria-label="전면/후면 카메라 전환">🔄 전환</button>
+        </div>
+
+        <div class="stage">
+            <video id="webcam-video" playsinline muted></video>
+            <canvas id="output-canvas" class="mirror"></canvas>
+            <div class="camera-overlay" id="ai-status">카메라 연결 중...</div>
+
+            <div class="big-counter">
+                <div class="big-reps"><span id="current-reps">0</span><small> / <span id="modal-reps">15</span><span id="unit-label">회</span></small></div>
+                <div class="big-set"><span id="current-set">1</span> / <span id="modal-sets">3</span>세트</div>
+            </div>
+
+            <div class="place-guide" id="place-guide">
+                <div class="pg-card">
+                    <div id="pg-figure"></div>
+                    <h3 id="pg-title">폰 위치</h3>
+                    <ul id="pg-lines"></ul>
+                    <button class="action-btn" type="button" onclick="hidePlacementGuide()">준비 완료! 시작하기</button>
+                </div>
+            </div>
+
+            <div class="rest-overlay" id="rest-overlay">
+                <h3>☕ 휴식 시간</h3>
+                <div class="rest-timer-num" id="rest-countdown">30</div>
+                <p>다음 세트를 준비하세요!</p>
+                <button class="skip-btn" onclick="skipRest()">휴식 건너뛰기 ⏩</button>
+            </div>
+        </div>
+
+        <div class="ws-bottom">
+            <details>
+                <summary>운동 방법 보기</summary>
+                <button class="link-btn" type="button" onclick="showPlacementGuide(false)">📱 폰 위치 안내 다시 보기</button>
+                <div id="modal-desc">전신이 잘 보이도록 서주세요!</div>
+                <p class="privacy-note">📱 폰을 바닥이나 선반에 세우고 2m 정도 뒤로 물러나세요. 자세 분석은 폰 안에서만 이루어지며 영상은 어디에도 전송되지 않습니다.</p>
+            </details>
+            <p class="ws-meta">휴식 시간: <span id="modal-rest">30</span>초</p>
+            <button class="action-btn" onclick="finishCurrentStep(true)">수동 완료 (AI 미검증 · +20 XP)</button>
+        </div>
+    </div>
+</div>
+
+<!-- 식단 완료 모달 -->
+<div class="modal" id="diet-modal">
+    <div class="modal-content">
+        <div id="diet-celebrate">
+            <h2>🎉 축하합니다!</h2>
+            <p style="margin-top: 5px;">오늘의 모든 운동 코스를 완료하셨습니다!</p>
+            <p style="margin-top: 5px; font-size: 0.85rem; color: #666;">식단 가이드는 이제 프로필 탭에서 언제든 볼 수 있어요.</p>
+            <hr style="margin: 15px 0;">
+        </div>
+        <h3>🥗 추천 식단 가이드</h3>
+        <div id="diet-info"></div>
+        <button class="action-btn" onclick="closeDietModal()">확인 및 완료</button>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    let currentXP = 0;
+    let currentLevel = 1;
+    let completedSteps = 0;
+    let selectedStepIndex = null;
+    let streakDays = 0;
+    let completedQuests = [];
+    let activityDates = [];
+    let completionModes = {};
+    let questDate = getLocalDateKey();
+
+    // 카메라 & AI
+    let pose = null;
+    let poseReady = false;
+    let poseFrameInFlight = false;
+    let cameraStream = null;
+    let frameLoopId = null;
+    let facingMode = 'user';     // 'user' = 전면, 'environment' = 후면
+    let cameraSession = 0;       // 오래된 카메라 시작 요청을 무시하기 위한 번호
+    let wakeLock = null;
+
+    let completionTimeout = null;
+    let isCompletingSet = false;
+    let countReps = 0;
+    let currentSet = 1;
+    let totalSets = 3;
+    let restTimeConfig = 30;
+    let motionState = 'UP';
+
+    let isResting = false;
+    let restInterval = null;
+    let restTimeLeft = 0;
+    let plankTimer = null;
+
+    // AI 모델: 정확한 모델(1)로 시작하고, 폰이 느리면 자동으로 가벼운 모델(0)로 바꿈
+    const COMPLEXITY_KEY = 'sololingo_model_complexity';
+    let poseComplexity = loadComplexity();
+    let fpsWindowStart = 0;
+    let fpsFrames = 0;
+    let fpsChecked = false;
+    const POSE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404';
+
+    // 인식 안정화용 값
+    const VISIBILITY = 0.5;      // 관절이 '보인다'고 판단하는 기준 (0~1)
+    const PLANK_GRACE_MS = 1000; // 플랭크 자세가 이 시간 이상 무너져야 타이머를 멈춤
+    let smoothed = {};           // 각도 흔들림을 줄이기 위한 평균값
+    let thighRef = 0;            // 서 있을 때 허벅지 길이 (스쿼트 기준값)
+    let plankLastGood = 0;
+
+    function loadComplexity() {
+        try {
+            const saved = localStorage.getItem(COMPLEXITY_KEY);
+            if (saved === '0' || saved === '1') return Number(saved);
+        } catch (error) { /* 저장소 사용 불가 */ }
+        return 1;
+    }
+
+    function resetRecognitionState() {
+        smoothed = {};
+        thighRef = 0;
+        plankLastGood = 0;
+        motionState = 'UP';
+    }
+
+    // 최근 값과 섞어서 한 프레임의 튀는 값을 줄임
+    function smooth(key, value, alpha = 0.45) {
+        const prev = smoothed[key];
+        const next = prev === undefined ? value : prev * (1 - alpha) + value * alpha;
+        smoothed[key] = next;
+        return next;
+    }
+
+    const exercises = [
+        { name: "스쿼트", type: "squat", instructions: ["폰을 세로로 세워 약 2m 앞에 둡니다.", "발까지 안 보여도 괜찮아요. 엉덩이와 무릎만 보이면 셉니다.", "무릎을 굽혀 앉았다가 다시 일어섭니다."] },
+        { name: "런지", type: "lunge", instructions: ["폰을 세로로 세워 약 2m 앞에 둡니다. 엉덩이와 무릎만 보이면 됩니다.", "한쪽 발을 앞으로 내딛습니다.", "자세가 안정적인 범위에서 무릎을 굽혔다가 돌아옵니다."] },
+        { name: "푸쉬업", type: "pushup", instructions: ["폰을 가로로 눕혀 몸 옆쪽 약 1.5m 바닥에 둡니다.", "어깨·팔꿈치·손목만 보이면 셉니다.", "팔꿈치를 굽혔다가 펴며 시작 자세로 돌아옵니다."] },
+        { name: "플랭크", type: "plank", instructions: ["폰을 가로로 눕혀 몸 옆쪽 약 1.5m 바닥에 둡니다.", "발까지 안 보여도 괜찮아요. 어깨~무릎만 보이면 됩니다.", "어깨, 엉덩이, 무릎(발목)이 일직선이 되게 유지합니다.", "잠깐 흔들리면 시간이 멈췄다가, 자세를 되찾으면 이어서 셉니다."] },
+        { name: "버피테스트", type: "burpee", instructions: ["현재 버전에서는 자동 자세 인식이 지원되지 않습니다.", "수동 완료를 선택할 경우 AI 인식 완료와 별도로 기록됩니다."] }
+    ];
+
+    // 운동별 폰 위치 안내
+    const placementGuides = {
+        front: {
+            title: '📱 폰을 세로로 세워 앞에 두세요',
+            caption: '옆에서 본 모습',
+            lines: ['약 2m 앞, 의자나 선반 위(허리 높이)에 세워두세요.', '화면에 엉덩이와 무릎이 보이면 OK! 발은 안 보여도 돼요.', '정면이나 옆모습 모두 인식돼요.'],
+            speech: '폰을 세로로 세워 2미터 앞에 두세요.'
+        },
+        side: {
+            title: '📱 폰을 가로로 눕혀 몸 옆에 두세요',
+            caption: '위에서 본 모습',
+            lines: ['바닥에 가로로 세워서 몸 옆쪽 약 1.5m에 두세요.', '카메라가 내 옆모습을 보도록 해주세요.', '어깨부터 무릎까지 보이면 OK! 발은 안 보여도 돼요.'],
+            speech: '폰을 가로로 눕혀 몸 옆쪽에 두세요.'
+        },
+        none: {
+            title: '📷 카메라 없이 하는 운동이에요',
+            caption: '',
+            lines: ['버피테스트는 아직 자동 인식이 안 돼요.', '동작을 모두 마치면 아래 \'수동 완료\' 버튼을 눌러주세요.'],
+            speech: '이 운동은 직접 완료 버튼을 눌러주세요.'
+        }
+    };
+    const placementByType = { squat: 'front', lunge: 'front', pushup: 'side', plank: 'side', burpee: 'none' };
+
+    const PLACEMENT_SVG = {
+        front: `<svg viewBox="0 0 260 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <line x1="10" y1="118" x2="250" y2="118" stroke="#ccc" stroke-width="3"/>
+            <rect x="28" y="78" width="34" height="40" rx="3" fill="#e5e5e5"/>
+            <rect x="37" y="46" width="16" height="30" rx="3" fill="#1cb0f6"/>
+            <circle cx="45" cy="52" r="2.5" fill="#fff"/>
+            <circle cx="205" cy="24" r="10" fill="#58cc02"/>
+            <line x1="205" y1="34" x2="205" y2="72" stroke="#58cc02" stroke-width="6" stroke-linecap="round"/>
+            <line x1="205" y1="44" x2="188" y2="62" stroke="#58cc02" stroke-width="5" stroke-linecap="round"/>
+            <line x1="205" y1="44" x2="222" y2="62" stroke="#58cc02" stroke-width="5" stroke-linecap="round"/>
+            <line x1="205" y1="72" x2="195" y2="116" stroke="#58cc02" stroke-width="6" stroke-linecap="round"/>
+            <line x1="205" y1="72" x2="215" y2="116" stroke="#58cc02" stroke-width="6" stroke-linecap="round"/>
+            <line x1="70" y1="100" x2="180" y2="100" stroke="#ffc800" stroke-width="3" stroke-dasharray="6 5"/>
+            <polygon points="180,95 190,100 180,105" fill="#ffc800"/>
+            <text x="125" y="93" text-anchor="middle" font-size="14" font-weight="bold" fill="#3c3c3c">약 2m</text>
+        </svg>`,
+        side: `<svg viewBox="0 0 260 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="10" y="8" width="240" height="114" rx="10" fill="#f7f7f7"/>
+            <circle cx="62" cy="40" r="11" fill="#58cc02"/>
+            <rect x="74" y="33" width="80" height="15" rx="7" fill="#58cc02"/>
+            <rect x="152" y="35" width="70" height="11" rx="5" fill="#58cc02"/>
+            <rect x="82" y="48" width="8" height="14" rx="3" fill="#58cc02"/>
+            <rect x="110" y="104" width="40" height="14" rx="3" fill="#1cb0f6"/>
+            <circle cx="130" cy="104" r="2.5" fill="#fff"/>
+            <line x1="130" y1="98" x2="130" y2="62" stroke="#ffc800" stroke-width="3" stroke-dasharray="6 5"/>
+            <polygon points="125,62 130,52 135,62" fill="#ffc800"/>
+            <text x="140" y="85" font-size="14" font-weight="bold" fill="#3c3c3c">약 1.5m</text>
+        </svg>`,
+        none: `<svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="105" y="10" width="50" height="70" rx="8" fill="#e5e5e5"/>
+            <circle cx="130" cy="45" r="16" fill="none" stroke="#999" stroke-width="4"/>
+            <line x1="100" y1="80" x2="160" y2="10" stroke="#ff4b4b" stroke-width="5" stroke-linecap="round"/>
+        </svg>`
+    };
+
+    let guideVisible = false;
+
+    function showPlacementGuide(speak = true) {
+        if (selectedStepIndex === null) return;
+        const ex = exercises[selectedStepIndex];
+        const key = placementByType[ex.type] || 'front';
+        const guide = placementGuides[key];
+        document.getElementById('pg-figure').innerHTML = PLACEMENT_SVG[key]
+            + (guide.caption ? `<div class="pg-caption">${guide.caption}</div>` : '');
+        document.getElementById('pg-title').textContent = guide.title;
+        const list = document.getElementById('pg-lines');
+        list.replaceChildren();
+        guide.lines.forEach(line => {
+            const li = document.createElement('li');
+            li.textContent = line;
+            list.appendChild(li);
+        });
+        document.getElementById('place-guide').style.display = 'flex';
+        guideVisible = true;
+        stopPlankTimer(false);
+        if (speak) speakText(guide.speech);
+    }
+
+    function hidePlacementGuide() {
+        document.getElementById('place-guide').style.display = 'none';
+        guideVisible = false;
+        resetRecognitionState();
+        if (selectedStepIndex !== null) {
+            const ex = exercises[selectedStepIndex];
+            speakText(ex.type === 'burpee' ? '시작!' : `${ex.name} 시작!`);
+            if (ex.type !== 'burpee') document.getElementById('ai-status').textContent = '시작! 자세를 잡아주세요';
+        }
+    }
+
+    const badges = [
+        { id: 'first_step', name: '🥉 운동 입문자', desc: '첫 번째 운동 단계 완료', unlocked: false, check: () => completedSteps >= 1 },
+        { id: 'streak_7', name: '🥈 7일 연속 운동', desc: '7일 연속 운동 달성', unlocked: false, check: () => streakDays >= 7 },
+        { id: 'profile_challenger', name: '🏆 바디프로필 도전자', desc: '바디프로필 목표로 전 코스 완료', unlocked: false, check: () => completedSteps >= 5 && document.getElementById('goal-select').value === 'profile' },
+        { id: 'level_master', name: '🏆 운동 마스터', desc: '레벨 3 달성', unlocked: false, check: () => currentLevel >= 3 },
+        { id: 'all_clear', name: '🥇 완전 정복', desc: '모든 운동 단계 1회 이상 완료', unlocked: false, check: () => completedSteps >= 5 }
+    ];
+
+    const difficultyConfig = {
+        diet: {
+            beginner: { sets: 3, reps: 10, rest: 30 },
+            intermediate: { sets: 4, reps: 15, rest: 25 },
+            advanced: { sets: 5, reps: 20, rest: 20 }
+        },
+        muscle: {
+            beginner: { sets: 3, reps: 8, rest: 60 },
+            intermediate: { sets: 4, reps: 12, rest: 50 },
+            advanced: { sets: 5, reps: 15, rest: 45 }
+        },
+        profile: {
+            beginner: { sets: 4, reps: 10, rest: 40 },
+            intermediate: { sets: 5, reps: 15, rest: 30 },
+            advanced: { sets: 6, reps: 20, rest: 20 }
+        }
+    };
+
+    const dietConfig = {
+        diet: { title: "균형 식사 예시", items: ["아침: 달걀, 과일, 곡류", "점심: 밥, 단백질 식품, 채소", "저녁: 밥 또는 곡류, 단백질 식품, 채소"] },
+        muscle: { title: "운동일 식사 예시", items: ["아침: 달걀, 오트밀 또는 곡류", "점심: 밥, 단백질 식품, 채소", "저녁: 밥 또는 곡류, 단백질 식품, 채소"] },
+        profile: { title: "균형 식사 예시", items: ["아침: 곡류, 단백질 식품, 과일", "점심: 밥, 단백질 식품, 채소", "저녁: 밥 또는 곡류, 단백질 식품, 채소"] }
+    };
+
+    // ===== 모바일 보조 기능 =====
+
+    // 음성 안내 (TTS)
+    function speakText(text) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'ko-KR';
+            utterance.rate = 1.1;
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    // 진동 (갤럭시 등 안드로이드 폰에서 동작)
+    function vibrate(pattern) {
+        try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (error) { /* 진동 미지원 기기 */ }
+    }
+
+    // alert 대신 화면 아래에 잠깐 보이는 알림
+    let toastTimer = null;
+    function showToast(message, duration = 2200) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+    }
+
+    // 운동 중 화면이 꺼지지 않게 함 (Screen Wake Lock API)
+    async function requestWakeLock() {
+        try {
+            if ('wakeLock' in navigator && !wakeLock) {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLock.addEventListener('release', () => { wakeLock = null; });
+            }
+        } catch (error) {
+            console.warn('화면 꺼짐 방지를 켜지 못했습니다.', error);
+        }
+    }
+
+    function releaseWakeLock() {
+        if (wakeLock) {
+            wakeLock.release().catch(() => {});
+            wakeLock = null;
+        }
+    }
+
+    // 횟수 표시 (큰 숫자 + 튀는 효과)
+    function setRepsDisplay(value, animate = false) {
+        const el = document.getElementById('current-reps');
+        el.textContent = String(value);
+        if (animate) {
+            el.classList.remove('pop');
+            void el.offsetWidth; // 애니메이션 다시 시작
+            el.classList.add('pop');
+        }
+    }
+
+    // 운동 기록 복사 기능
+    function copyAssessmentReport() {
+        const goal = document.getElementById('goal-select').selectedOptions[0].text;
+        const level = document.getElementById('level-select').selectedOptions[0].text;
+        const today = new Date().toLocaleDateString('ko-KR');
+
+        const aiCount = Object.values(completionModes).filter(mode => mode === 'ai').length;
+        const manualCount = Object.values(completionModes).filter(mode => mode === 'manual').length;
+        const unknownCount = Math.max(0, completedSteps - aiCount - manualCount);
+        const reportText = `[ SOLOLINGO 운동 기록 ]\n- 일자: ${today}\n- 운동 목표: ${goal} (${level})\n- 레벨: Lv.${currentLevel}\n- 완료한 운동: ${completedSteps}/${exercises.length} 단계\n- AI 인식 완료: ${aiCount}단계\n- 수동 완료: ${manualCount}단계\n- 완료 방식 미기록(이전 저장 데이터): ${unknownCount}단계\n- 연속 운동 일수: ${calculateStreakDays()}일\n- 현재 XP: ${currentXP} XP\n---------------------------------------\n※ 이 기록은 이 기기에 저장된 앱 진행 상황을 요약한 것으로, 외부 인증을 거친 기록은 아닙니다.`;
+
+        // 안드로이드에서는 공유 창(카톡 등)으로 바로 보낼 수 있게 함
+        if (navigator.share) {
+            navigator.share({ title: 'SOLOLINGO 운동 기록', text: reportText }).catch(() => {});
+            return;
+        }
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+            alert(`클립보드를 사용할 수 없습니다. 아래 기록을 직접 복사해 주세요.\n\n${reportText}`);
+            return;
+        }
+        navigator.clipboard.writeText(reportText).then(() => {
+            showToast("운동 기록이 클립보드에 복사되었습니다!");
+        }).catch(() => alert(`복사에 실패했습니다. 아래 기록을 직접 복사해 주세요.\n\n${reportText}`));
+    }
+
+    // 날짜는 UTC가 아닌 기기 현지 날짜 기준으로 기록합니다.
+    function getLocalDateKey(date = new Date()) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function isValidDateKey(value) {
+        if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+        const date = new Date(`${value}T00:00:00`);
+        return !Number.isNaN(date.getTime()) && getLocalDateKey(date) === value;
+    }
+
+    function safeInteger(value, fallback, min, max) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return fallback;
+        return Math.min(max, Math.max(min, Math.floor(parsed)));
+    }
+
+    function calculateStreakDays() {
+        const dates = new Set(activityDates.filter(isValidDateKey));
+        const cursor = new Date();
+        if (!dates.has(getLocalDateKey(cursor))) {
+            cursor.setDate(cursor.getDate() - 1);
+            if (!dates.has(getLocalDateKey(cursor))) return 0;
+        }
+        let count = 0;
+        while (dates.has(getLocalDateKey(cursor))) {
+            count++;
+            cursor.setDate(cursor.getDate() - 1);
+        }
+        return count;
+    }
+
+    function recordWorkoutActivity() {
+        const today = getLocalDateKey();
+        if (!activityDates.includes(today)) activityDates.push(today);
+        activityDates = [...new Set(activityDates.filter(isValidDateKey))].sort().slice(-400);
+        streakDays = calculateStreakDays();
+    }
+
+    function updateQuestButtons() {
+        disableQuestBtn('quest-btn-1');
+        disableQuestBtn('quest-btn-2');
+        if (!completedQuests.includes('quest_1')) enableQuestBtn('quest-btn-1');
+        if (!completedQuests.includes('quest_2')) enableQuestBtn('quest-btn-2');
+    }
+
+    function ensureDailyQuestsCurrent() {
+        const today = getLocalDateKey();
+        if (questDate !== today) {
+            questDate = today;
+            completedQuests = [];
+            updateQuestButtons();
+            saveProgress();
+        }
+    }
+
+    function enableQuestBtn(btnId) {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = '완료';
+        }
+    }
+
+    // 저장 데이터는 사용자가 개발자 도구로 바꾸거나 손상시킬 수 있으므로 검증합니다.
+    function saveProgress() {
+        const data = {
+            version: 2,
+            currentXP,
+            currentLevel,
+            completedSteps,
+            unlockedBadges: badges.filter(b => b.unlocked).map(b => b.id),
+            completedQuests,
+            questDate,
+            activityDates,
+            completionModes
+        };
+        try {
+            localStorage.setItem('sololingo_save_data', JSON.stringify(data));
+        } catch (error) {
+            console.warn('진행 상황을 저장하지 못했습니다.', error);
+        }
+    }
+
+    function loadProgress() {
+        try {
+            const saved = localStorage.getItem('sololingo_save_data');
+            if (!saved) {
+                questDate = getLocalDateKey();
+                completedQuests = [];
+                updateQuestButtons();
+                return;
+            }
+
+            const data = JSON.parse(saved);
+            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('저장 데이터 형식이 올바르지 않습니다.');
+
+            currentXP = safeInteger(data.currentXP, 0, 0, 99);
+            currentLevel = safeInteger(data.currentLevel, 1, 1, 1000000);
+            completedSteps = safeInteger(data.completedSteps, 0, 0, exercises.length);
+            activityDates = Array.isArray(data.activityDates)
+                ? [...new Set(data.activityDates.filter(isValidDateKey))].sort().slice(-400)
+                : [];
+
+            completionModes = {};
+            if (data.completionModes && typeof data.completionModes === 'object' && !Array.isArray(data.completionModes)) {
+                for (let i = 0; i < completedSteps; i++) {
+                    const mode = data.completionModes[String(i)];
+                    if (mode === 'ai' || mode === 'manual') completionModes[String(i)] = mode;
+                }
+            }
+
+            const validBadgeIds = new Set(badges.map(b => b.id));
+            const savedBadges = Array.isArray(data.unlockedBadges) ? data.unlockedBadges : [];
+            badges.forEach(b => { b.unlocked = savedBadges.includes(b.id) && validBadgeIds.has(b.id); });
+
+            const today = getLocalDateKey();
+            questDate = today;
+            completedQuests = data.questDate === today && Array.isArray(data.completedQuests)
+                ? data.completedQuests.filter(id => id === 'quest_1' || id === 'quest_2')
+                : [];
+            completedQuests = [...new Set(completedQuests)];
+            streakDays = calculateStreakDays();
+            updateQuestButtons();
+        } catch (error) {
+            console.warn('저장된 진행 상황을 읽지 못해 기본값으로 시작합니다.', error);
+            currentXP = 0;
+            currentLevel = 1;
+            completedSteps = 0;
+            completedQuests = [];
+            activityDates = [];
+            completionModes = {};
+            streakDays = 0;
+            badges.forEach(b => { b.unlocked = false; });
+            questDate = getLocalDateKey();
+            updateQuestButtons();
+        }
+    }
+
+    function resetAllData() {
+        if (confirm("모든 운동 기록과 레벨을 초기화하시겠습니까?")) {
+            closeWorkoutModal();
+            try { localStorage.removeItem('sololingo_save_data'); } catch (error) { console.warn(error); }
+            location.reload();
+        }
+    }
+
+    function updateUI() {
+        streakDays = calculateStreakDays();
+        document.getElementById('xp-fill').style.width = `${Math.min(100, currentXP)}%`;
+        document.getElementById('xp-text').innerText = `${currentXP} / 100 XP`;
+        document.getElementById('profile-level').innerText = `Lv. ${currentLevel} ${currentLevel >= 3 ? '운동 마스터' : '초보 코치'}`;
+        document.getElementById('stat-completed').innerText = completedSteps;
+        document.getElementById('stat-streak').innerText = `${streakDays}일`;
+        renderPath();
+        renderBadges();
+        renderDietCard();
+    }
+
+    function init() {
+        loadProgress();
+        checkBadges(false);
+        updateUI();
+        setupInstallButton();
+        registerServiceWorker();
+    }
+
+    function explainCameraError(error) {
+        const name = error?.name || 'UnknownError';
+        const message = error?.message || '브라우저에서 상세 오류를 제공하지 않았습니다.';
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+            return '카메라 권한을 사용할 수 없는 실행 환경입니다. HTTPS 주소(예: GitHub Pages)로 접속해 주세요.';
+        }
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+            return '카메라 권한이 차단되었습니다. 주소창 왼쪽 아이콘 → 권한에서 카메라를 허용해 주세요.';
+        }
+        if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+            return '사용 가능한 카메라를 찾지 못했습니다.';
+        }
+        if (name === 'NotReadableError' || name === 'TrackStartError') {
+            return '다른 앱이 카메라를 사용 중입니다. 다른 앱을 닫고 다시 시도해 주세요.';
+        }
+        if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+            return '이 카메라 설정을 지원하지 않습니다. 🔄 전환을 눌러 다른 카메라를 사용해 보세요.';
+        }
+        return `카메라 오류 (${name}): ${message}`;
+    }
+
+    // ===== AI 자세 인식 준비 (처음 운동을 시작할 때 한 번만) =====
+    function ensurePose() {
+        if (pose) return pose;
+        if (typeof Pose !== 'function') throw new Error('MediaPipe 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
+        pose = new Pose({ locateFile: (file) => `${POSE_CDN}/${file}` });
+        pose.setOptions({ modelComplexity: poseComplexity, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        pose.onResults(onPoseResults);
+        return pose;
+    }
+
+    // ===== 카메라 (MediaPipe camera_utils 대신 직접 제어) =====
+    async function startCamera(index) {
+        const session = ++cameraSession;
+        stopCamera(false);
+
+        const videoElement = document.getElementById('webcam-video');
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+                facingMode: facingMode,
+                // 카메라 센서 원래 비율(4:3)로 요청 → 16:9보다 위아래가 덜 잘려서 더 넓게 찍힘
+                // (AI 입력은 256px이라 해상도는 640이면 충분하고 더 빠름)
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
+        });
+
+        // 광각(줌 아웃)을 지원하는 카메라라면 가장 넓게 설정
+        try {
+            const track = stream.getVideoTracks()[0];
+            const caps = track.getCapabilities ? track.getCapabilities() : {};
+            if (caps.zoom && Number.isFinite(caps.zoom.min)) {
+                await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] });
+            }
+        } catch (error) { /* 줌 미지원 카메라 */ }
+
+        // 카메라를 켜는 사이에 다른 운동으로 바뀌었거나 창을 닫았다면 바로 끔
+        if (session !== cameraSession || selectedStepIndex !== index) {
+            stream.getTracks().forEach(track => track.stop());
+            return false;
+        }
+
+        cameraStream = stream;
+        videoElement.srcObject = stream;
+        await videoElement.play();
+        document.getElementById('output-canvas').classList.toggle('mirror', facingMode === 'user');
+        runFrameLoop(session);
+        return true;
+    }
+
+    function runFrameLoop(session) {
+        const videoElement = document.getElementById('webcam-video');
+        const step = async () => {
+            if (session !== cameraSession) return;
+            frameLoopId = requestAnimationFrame(step);
+            if (!pose || poseRecovering || videoElement.readyState < 2 || selectedStepIndex === null || isResting || poseFrameInFlight) return;
+            poseFrameInFlight = true;
+            try {
+                await pose.send({ image: videoElement });
+                if (!poseReady) {
+                    poseReady = true;
+                    poseErrorCount = 0;
+                } else {
+                    checkSpeed();
+                }
+            } catch (error) {
+                console.warn('자세 인식 중 오류가 발생했습니다.', error);
+                recoverPose(error);
+            } finally {
+                poseFrameInFlight = false;
+            }
+        };
+        frameLoopId = requestAnimationFrame(step);
+    }
+
+    // 처음 4초 동안 초당 몇 번 인식하는지 재서, 너무 느리면 가벼운 모델로 전환
+    function checkSpeed() {
+        if (fpsChecked || poseComplexity === 0 || !pose) return;
+        const now = performance.now();
+        if (!fpsWindowStart) { fpsWindowStart = now; fpsFrames = 0; return; }
+        fpsFrames++;
+        if (now - fpsWindowStart < 4000) return;
+        fpsChecked = true;
+        const fps = fpsFrames * 1000 / (now - fpsWindowStart);
+        if (fps < 9) {
+            useLightModel();
+            rebuildPose();
+            showToast('폰 속도에 맞춰 가벼운 AI 모드로 바꿨어요');
+        }
+    }
+
+    function useLightModel() {
+        poseComplexity = 0;
+        fpsChecked = true;
+        try { localStorage.setItem(COMPLEXITY_KEY, '0'); } catch (error) { /* 무시 */ }
+    }
+
+    // AI를 완전히 새로 만듦 (실행 중에 설정을 바꾸면 오류가 나는 기기가 있어서)
+    let poseRecovering = false;
+    let poseErrorCount = 0;
+    function rebuildPose(delay = 300) {
+        poseRecovering = true;
+        const old = pose;
+        pose = null;
+        poseReady = false;
+        if (old) { try { old.close(); } catch (error) { /* 이미 닫힘 */ } }
+        setTimeout(() => {
+            try { ensurePose(); } catch (error) { console.warn(error); }
+            poseRecovering = false;
+        }, delay);
+    }
+
+    // 자세 인식 중 오류가 나면: 가벼운 모델로 바꿔 최대 3번 다시 시도
+    function recoverPose(error) {
+        poseErrorCount++;
+        const detail = (error && (error.message || error.name)) ? String(error.message || error.name).slice(0, 60) : '알 수 없는 오류';
+        const status = document.getElementById('ai-status');
+        if (poseErrorCount <= 3) {
+            useLightModel();
+            rebuildPose(500 * poseErrorCount);
+            if (selectedStepIndex !== null) status.textContent = `AI 다시 준비 중... (${poseErrorCount}/3)`;
+        } else if (selectedStepIndex !== null) {
+            poseRecovering = true; // 더 시도하지 않음
+            status.textContent = `자세 인식 오류: ${detail} (수동 완료 가능)`;
+        }
+    }
+
+    function stopCamera(invalidate = true) {
+        if (invalidate) cameraSession++;
+        if (frameLoopId) { cancelAnimationFrame(frameLoopId); frameLoopId = null; }
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            cameraStream = null;
+        }
+        const videoElement = document.getElementById('webcam-video');
+        if (videoElement) videoElement.srcObject = null;
+    }
+
+    function flipCamera() {
+        if (selectedStepIndex === null) return;
+        const ex = exercises[selectedStepIndex];
+        if (!ex || ex.type === 'burpee') return;
+        facingMode = facingMode === 'user' ? 'environment' : 'user';
+        showToast(facingMode === 'user' ? '전면 카메라' : '후면 카메라');
+        beginCamera(selectedStepIndex);
+    }
+
+    function beginCamera(index) {
+        const ex = exercises[index];
+        document.getElementById('ai-status').textContent = poseReady ? '카메라 켜는 중...' : 'AI 모델 불러오는 중... (처음 한 번은 조금 걸려요)';
+        startCamera(index).then(started => {
+            if (!started || selectedStepIndex !== index) return;
+            document.getElementById('ai-status').textContent = `${ex.name} 준비 완료! 2m 뒤로 물러나세요`;
+        }).catch(error => {
+            console.warn('카메라를 시작하지 못했습니다.', error);
+            if (selectedStepIndex === index) {
+                document.getElementById('ai-status').textContent = `${explainCameraError(error)} (수동 진행 가능)`;
+            }
+        });
+    }
+
+    function calculateAngle(p1, p2, p3) {
+        const radians = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
+        let angle = Math.abs((radians * 180.0) / Math.PI);
+        if (angle > 180.0) angle = 360 - angle;
+        return angle;
+    }
+
+    function isLandmarkVisible(point, threshold = VISIBILITY) {
+        if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+        const visibility = point.visibility ?? 1;
+        return Number.isFinite(visibility) && visibility >= threshold;
+    }
+
+    function landmarkSideScore(landmarks, indices) {
+        return indices.reduce((score, index) => {
+            const point = landmarks[index];
+            return score + (point && Number.isFinite(point.visibility) ? point.visibility : 0);
+        }, 0);
+    }
+
+    function stopPlankTimer(resetCount = false) {
+        if (plankTimer) {
+            clearInterval(plankTimer);
+            plankTimer = null;
+        }
+        if (resetCount) {
+            countReps = 0;
+            setRepsDisplay(0);
+        }
+    }
+
+    function drawSkeleton(ctx, landmarks, width, height) {
+        const connections = [
+            [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+            [11, 23], [12, 24], [23, 24],
+            [23, 25], [25, 27], [24, 26], [26, 28]
+        ];
+
+        // 화면 크기에 맞춰 선 굵기 조절 (고해상도 폰에서도 잘 보이게)
+        const scale = Math.max(1, Math.min(width, height) / 360);
+        ctx.strokeStyle = '#58cc02';
+        ctx.lineWidth = 4 * scale;
+
+        connections.forEach(([i, j]) => {
+            const p1 = landmarks[i], p2 = landmarks[j];
+            if (isLandmarkVisible(p1) && isLandmarkVisible(p2)) {
+                ctx.beginPath();
+                ctx.moveTo(p1.x * width, p1.y * height);
+                ctx.lineTo(p2.x * width, p2.y * height);
+                ctx.stroke();
+            }
+        });
+
+        [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].forEach(i => {
+            const point = landmarks[i];
+            if (isLandmarkVisible(point)) {
+                ctx.beginPath();
+                ctx.arc(point.x * width, point.y * height, 6 * scale, 0, 2 * Math.PI);
+                ctx.fillStyle = '#ffc800';
+                ctx.fill();
+            }
+        });
+    }
+
+    function onPoseResults(results) {
+        if (isResting || selectedStepIndex === null) return;
+
+        const canvasElement = document.getElementById('output-canvas');
+        const canvasCtx = canvasElement?.getContext('2d');
+        if (!canvasElement || !canvasCtx || !results?.image) return;
+        if (canvasElement.width !== results.image.width) canvasElement.width = results.image.width;
+        if (canvasElement.height !== results.image.height) canvasElement.height = results.image.height;
+
+        // 카메라 영상과 뼈대를 같은 canvas에 그려서 위치가 항상 일치하게 함
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        const currentEx = exercises[selectedStepIndex];
+        if (!currentEx) return;
+
+        const W = canvasElement.width, H = canvasElement.height;
+        const status = document.getElementById('ai-status');
+
+        if (!results.poseLandmarks) {
+            if (guideVisible) return;
+            if (currentEx.type === 'plank') pausePlankIfStale();
+            else motionState = 'UP';
+            status.textContent = currentEx.type === 'burpee'
+                ? '수동 완료만 지원되는 운동입니다.'
+                : '사람이 보이지 않아요. 화면 안으로 들어와 주세요';
+            return;
+        }
+
+        const landmarks = results.poseLandmarks;
+        drawSkeleton(canvasCtx, landmarks, W, H);
+
+        // 안내 화면이 떠 있는 동안에는 미리보기만 하고 세지 않음
+        if (guideVisible) {
+            status.textContent = '화면에 내 몸이 보이면 시작하기를 눌러주세요';
+            return;
+        }
+
+        if (currentEx.type === 'burpee') {
+            status.textContent = '자동 인식 미지원 · 수동 완료 가능';
+            return;
+        }
+
+        // 0~1 비율 좌표를 실제 픽셀 좌표로 바꿔서 각도를 계산 (화면 비율 때문에 각도가 틀어지지 않게)
+        const P = landmarks.map(p => ({ x: p.x * W, y: p.y * H, visibility: p.visibility }));
+        const vis = index => isLandmarkVisible(landmarks[index]);
+
+        const targetReps = safeInteger(
+            Number.parseInt(document.getElementById('modal-reps').textContent, 10), 1, 1, 1000
+        );
+
+        // 카메라에 더 잘 보이는 쪽(왼쪽/오른쪽) 몸을 사용
+        const LEFT = { shoulder: 11, elbow: 13, wrist: 15, hip: 23, knee: 25, ankle: 27 };
+        const RIGHT = { shoulder: 12, elbow: 14, wrist: 16, hip: 24, knee: 26, ankle: 28 };
+        const scoreKeys = currentEx.type === 'pushup' ? ['shoulder', 'elbow', 'wrist']
+            : currentEx.type === 'plank' ? ['shoulder', 'hip', 'knee', 'elbow']
+            : ['hip', 'knee', 'ankle'];
+        const useRight = landmarkSideScore(landmarks, scoreKeys.map(k => RIGHT[k])) >= landmarkSideScore(landmarks, scoreKeys.map(k => LEFT[k]));
+        const J = useRight ? RIGHT : LEFT;
+
+        if (currentEx.type === 'squat' || currentEx.type === 'lunge') {
+            // 엉덩이와 무릎만 보이면 인식 가능 (발목은 있으면 더 정확)
+            if (!vis(J.hip) || !vis(J.knee)) {
+                motionState = 'UP';
+                status.textContent = '엉덩이와 무릎이 화면에 보이게 해주세요';
+                return;
+            }
+            // 허벅지의 세로 길이: 서 있으면 길고, 앉으면 짧아짐 (정면·측면 모두 동작)
+            // 몸통 길이로 나눠서, 카메라에서 멀어지거나 가까워져도 값이 변하지 않게 함
+            const thigh = Math.max(0, P[J.knee].y - P[J.hip].y);
+            const torso = vis(J.shoulder) ? Math.hypot(P[J.shoulder].x - P[J.hip].x, P[J.shoulder].y - P[J.hip].y) : 0;
+            let ratio;
+            if (torso > 0) {
+                const thighNorm = thigh / torso;
+                thighRef = Math.max(thighNorm, thighRef * 0.998); // 서 있을 때 값을 기억 (천천히 갱신)
+                ratio = smooth('thigh', thighRef > 0 ? thighNorm / thighRef : 1);
+            } else {
+                // 어깨가 안 보이면 허벅지 길이만으로 판단 (이때는 너무 앞뒤로 움직이지 않기)
+                smoothed.rawRef = Math.max(thigh, (smoothed.rawRef || 0) * 0.998);
+                ratio = smooth('thigh', smoothed.rawRef > 0 ? thigh / smoothed.rawRef : 1);
+            }
+
+            let isDown;
+            let isUp;
+            if (vis(J.ankle)) {
+                const kneeAngle = smooth('knee', calculateAngle(P[J.hip], P[J.knee], P[J.ankle]));
+                isDown = kneeAngle < 115 || ratio < 0.5;
+                isUp = kneeAngle > 150 && ratio > 0.75;
+            } else {
+                isDown = ratio < 0.55;
+                isUp = ratio > 0.8;
+            }
+
+            if (isDown && motionState === 'UP') {
+                motionState = 'DOWN';
+                status.textContent = '⬇️ 내려가는 중';
+            } else if (isUp && motionState === 'DOWN') {
+                motionState = 'UP';
+                incrementRep(targetReps);
+            } else if (motionState === 'UP' && !isDown) {
+                status.textContent = vis(J.ankle) ? '좋아요! 앉았다 일어나세요' : '좋아요! 발이 안 보여도 셀 수 있어요';
+            }
+        } else if (currentEx.type === 'pushup') {
+            if (![J.shoulder, J.elbow, J.wrist].every(vis)) {
+                motionState = 'UP';
+                status.textContent = '어깨·팔꿈치·손목이 보이도록 폰을 몸 옆에 두세요';
+                return;
+            }
+            const angle = smooth('elbow', calculateAngle(P[J.shoulder], P[J.elbow], P[J.wrist]));
+            if (angle < 100 && motionState === 'UP') {
+                motionState = 'DOWN';
+                status.textContent = '⬇️ 팔을 굽히는 중';
+            } else if (angle > 145 && motionState === 'DOWN') {
+                motionState = 'UP';
+                incrementRep(targetReps);
+            }
+        } else if (currentEx.type === 'plank') {
+            const now = performance.now();
+            let problem = '';
+
+            // 발목이 안 보이면 무릎을 대신 사용 → 어깨~무릎까지만 보여도 인식
+            const lower = vis(J.ankle) ? J.ankle : (vis(J.knee) ? J.knee : null);
+            if (!vis(J.shoulder) || !vis(J.hip) || lower === null) {
+                problem = '어깨·엉덩이·무릎이 보이게 해주세요';
+            } else {
+                const bodyAngle = smooth('body', calculateAngle(P[J.shoulder], P[J.hip], P[lower]));
+
+                // 서 있는 자세와 구분: 엎드리면 팔이 몸통과 거의 직각이 됨
+                // (폰을 어느 방향으로 눕혀도 동작하도록 화면 방향과 무관한 방법 사용)
+                let isLying;
+                if (vis(J.elbow)) {
+                    isLying = calculateAngle(P[J.hip], P[J.shoulder], P[J.elbow]) >= 45;
+                } else {
+                    isLying = Math.abs(P[J.shoulder].x - P[J.hip].x) > Math.abs(P[J.shoulder].y - P[J.hip].y);
+                }
+
+                if (!isLying) problem = '엎드려서 팔꿈치나 손으로 몸을 받쳐주세요';
+                else if (bodyAngle < 145) problem = '⚠️ 엉덩이를 어깨·다리와 일직선으로 맞춰주세요';
+            }
+
+            if (!problem) {
+                plankLastGood = now;
+                status.textContent = '🔥 자세 유지 중!';
+                if (!plankTimer) startPlankTimer(targetReps);
+            } else if (now - plankLastGood > PLANK_GRACE_MS) {
+                // 잠깐 흔들린 건 봐주고, 1초 넘게 무너지면 '일시정지' (0초로 초기화하지 않음)
+                stopPlankTimer(false);
+                status.textContent = `${problem} (일시정지)`;
+            }
+        }
+    }
+
+    function pausePlankIfStale() {
+        if (performance.now() - plankLastGood > PLANK_GRACE_MS) stopPlankTimer(false);
+    }
+
+    function startPlankTimer(targetReps) {
+        const timerStep = selectedStepIndex;
+        const timerSet = currentSet;
+        plankTimer = setInterval(() => {
+            if (selectedStepIndex !== timerStep || currentSet !== timerSet || isResting || !document.getElementById('workout-modal').style.display.includes('flex')) {
+                stopPlankTimer(false);
+                return;
+            }
+            countReps = Math.min(targetReps, countReps + 1);
+            setRepsDisplay(countReps, true);
+            if (countReps % 5 === 0) { speakText(`${countReps}초`); vibrate(60); }
+            if (countReps >= targetReps) {
+                stopPlankTimer(false);
+                handleSetCompletion();
+            }
+        }, 1000);
+    }
+
+    function incrementRep(targetReps) {
+        if (selectedStepIndex === null || isResting || isCompletingSet) return;
+        countReps = Math.min(targetReps, countReps + 1);
+        setRepsDisplay(countReps, true);
+        document.getElementById('ai-status').textContent = `인식 완료 (${countReps}/${targetReps})`;
+        speakText(`${countReps}`);
+        vibrate(60);
+
+        if (countReps >= targetReps) handleSetCompletion();
+    }
+
+    function handleSetCompletion() {
+        if (selectedStepIndex === null || isResting || isCompletingSet) return;
+        isCompletingSet = true;
+        vibrate([120, 60, 120]);
+        if (currentSet < totalSets) {
+            speakText('세트 완료! 휴식을 취하세요.');
+            startRestPhase();
+        } else {
+            speakText('축하합니다! 모든 세트를 마쳤습니다.');
+            completionTimeout = setTimeout(() => {
+                completionTimeout = null;
+                finishCurrentStep(false);
+            }, 300);
+        }
+    }
+
+    function startRestPhase() {
+        if (restInterval) clearInterval(restInterval);
+        isResting = true;
+        restTimeLeft = restTimeConfig;
+        document.getElementById('rest-countdown').textContent = String(restTimeLeft);
+        document.getElementById('rest-overlay').style.display = 'flex';
+
+        restInterval = setInterval(() => {
+            restTimeLeft--;
+            document.getElementById('rest-countdown').textContent = String(Math.max(0, restTimeLeft));
+            if (restTimeLeft === 3) speakText('3초 전');
+            if (restTimeLeft <= 0) endRestPhase();
+        }, 1000);
+    }
+
+    function skipRest() { endRestPhase(); }
+
+    function endRestPhase() {
+        if (!isResting) return;
+        if (restInterval) { clearInterval(restInterval); restInterval = null; }
+        isResting = false;
+        isCompletingSet = false;
+        document.getElementById('rest-overlay').style.display = 'none';
+
+        currentSet++;
+        countReps = 0;
+        resetRecognitionState();
+        document.getElementById('current-set').textContent = String(currentSet);
+        setRepsDisplay(0);
+        document.getElementById('ai-status').textContent = `${currentSet}세트 시작!`;
+        speakText(`${currentSet}세트 시작!`);
+        vibrate(200);
+    }
+
+    function openExerciseModal(index) {
+        if (!Number.isInteger(index) || index < 0 || index >= exercises.length) return;
+        if (index > completedSteps) {
+            showToast('🔒 이전 단계를 먼저 클리어해주세요!');
+            return;
+        }
+
+        stopWorkoutResources();
+        selectedStepIndex = index;
+        countReps = 0;
+        currentSet = 1;
+        resetRecognitionState();
+        isResting = false;
+        isCompletingSet = false;
+
+        const ex = exercises[index];
+        const goal = document.getElementById('goal-select').value;
+        const level = document.getElementById('level-select').value;
+        const config = (difficultyConfig[goal] || difficultyConfig.diet)[level] || difficultyConfig.diet.beginner;
+
+        totalSets = config.sets;
+        restTimeConfig = config.rest;
+
+        document.getElementById('modal-title').textContent = ex.name;
+        const instructionList = document.createElement('ol');
+        instructionList.className = 'instruction-list';
+        ex.instructions.forEach(instruction => {
+            const item = document.createElement('li');
+            item.textContent = instruction;
+            instructionList.appendChild(item);
+        });
+        document.getElementById('modal-desc').replaceChildren(instructionList);
+        document.getElementById('modal-sets').textContent = String(totalSets);
+        document.getElementById('modal-reps').textContent = String(config.reps);
+        document.getElementById('modal-rest').textContent = String(restTimeConfig);
+        document.getElementById('current-set').textContent = '1';
+        setRepsDisplay(0);
+        document.getElementById('unit-label').textContent = ex.type === 'plank' ? '초' : '회';
+        document.getElementById('rest-overlay').style.display = 'none';
+        document.getElementById('workout-modal').style.display = 'flex';
+        document.getElementById('flip-btn').style.visibility = ex.type === 'burpee' ? 'hidden' : 'visible';
+
+        // 안드로이드 '뒤로 가기'를 누르면 앱이 꺼지지 않고 운동 창만 닫히게 함
+        if (!(history.state && history.state.sololingoModal)) {
+            history.pushState({ sololingoModal: true }, '');
+        }
+
+        // 음성 안내는 사용자가 화면을 누른 순간에 먼저 한 번 말해야 폰에서 허용됨
+        showPlacementGuide(true); // 화면을 누른 순간에 말해야 폰에서 음성이 허용됨
+        requestWakeLock();
+
+        const canvas = document.getElementById('output-canvas');
+        const context = canvas?.getContext('2d');
+        if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (ex.type === 'burpee') {
+            stopCamera();
+            document.getElementById('ai-status').textContent = '자동 자세 인식 미지원 · 수동 완료 가능';
+            return;
+        }
+
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+            document.getElementById('ai-status').textContent =
+                '카메라는 HTTPS 주소에서만 켜집니다. (수동 진행 가능)';
+            return;
+        }
+
+        // 지난번에 복구를 포기했다면 운동을 다시 열 때 처음부터 다시 시도
+        if (poseErrorCount > 3) {
+            poseErrorCount = 0;
+            poseRecovering = false;
+            if (pose) { try { pose.close(); } catch (error) { /* 무시 */ } pose = null; }
+        }
+        try {
+            ensurePose();
+        } catch (error) {
+            console.warn(error);
+            document.getElementById('ai-status').textContent = `${error.message} (수동 완료 가능)`;
+            return;
+        }
+        beginCamera(index);
+    }
+
+    function stopWorkoutResources() {
+        stopPlankTimer(false);
+        if (restInterval) { clearInterval(restInterval); restInterval = null; }
+        if (completionTimeout) { clearTimeout(completionTimeout); completionTimeout = null; }
+        isResting = false;
+        isCompletingSet = false;
+        document.getElementById('rest-overlay').style.display = 'none';
+        stopCamera();
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    }
+
+    // 원래 코드에서 호출만 하고 정의되지 않았던 함수 (닫기 버튼·뒤로가기·앱 전환 시 사용)
+    function closeWorkoutModal() {
+        const modal = document.getElementById('workout-modal');
+        const wasOpen = modal.style.display === 'flex';
+        stopWorkoutResources();
+        modal.style.display = 'none';
+        document.getElementById('place-guide').style.display = 'none';
+        guideVisible = false;
+        selectedStepIndex = null;
+        releaseWakeLock();
+        if (wasOpen && history.state && history.state.sololingoModal) {
+            ignoreNextPop = true; // 우리가 직접 보낸 '뒤로 가기'는 무시 (바로 다시 연 창이 닫히지 않게)
+            history.back();
+        }
+    }
+    let ignoreNextPop = false;
+
+    // 폰을 돌리면 카메라 방향을 다시 맞추기 위해 카메라를 다시 켬
+    let orientationTimer = null;
+    function handleOrientationChange() {
+        clearTimeout(orientationTimer);
+        orientationTimer = setTimeout(() => {
+            if (selectedStepIndex === null || !cameraStream) return;
+            const ex = exercises[selectedStepIndex];
+            if (ex && ex.type !== 'burpee') {
+                smoothed = {};
+                thighRef = 0;
+                beginCamera(selectedStepIndex);
+            }
+        }, 400);
+    }
+    if (screen.orientation && screen.orientation.addEventListener) {
+        screen.orientation.addEventListener('change', handleOrientationChange);
+    } else {
+        window.addEventListener('orientationchange', handleOrientationChange);
+    }
+
+    window.addEventListener('popstate', () => {
+        if (ignoreNextPop) {
+            ignoreNextPop = false;
+            // 그 사이에 운동 창을 다시 열었다면 뒤로 가기 기록을 다시 만들어 둠
+            if (document.getElementById('workout-modal').style.display === 'flex') {
+                history.pushState({ sololingoModal: true }, '');
+            }
+            return;
+        }
+        if (document.getElementById('workout-modal').style.display === 'flex') closeWorkoutModal();
+    });
+
+    function finishCurrentStep(isManual = false) {
+        const finishedIndex = selectedStepIndex;
+        if (finishedIndex === null) return;
+        closeWorkoutModal();
+
+        if (finishedIndex === completedSteps) {
+            completionModes[String(finishedIndex)] = isManual ? 'manual' : 'ai';
+            completedSteps++;
+            recordWorkoutActivity();
+            addXP(20);
+            checkBadges();
+            saveProgress();
+            renderPath();
+
+            if (completedSteps === exercises.length) {
+                setTimeout(() => { showDietModal(true); renderDietCard(); }, 500);
+            }
+        }
+    }
+
+    function renderBadges() {
+        const container = document.getElementById('badges-list');
+        container.replaceChildren();
+        badges.forEach(badge => {
+            const el = document.createElement('div');
+            el.className = `badge ${badge.unlocked ? 'unlocked' : ''}`;
+            const title = document.createElement('div');
+            title.textContent = badge.name;
+            const description = document.createElement('div');
+            description.style.fontSize = '0.75rem';
+            description.textContent = badge.desc;
+            el.append(title, description);
+            container.appendChild(el);
+        });
+    }
+
+    function checkBadges(announce = true) {
+        badges.forEach(badge => {
+            if (!badge.unlocked && badge.check()) {
+                badge.unlocked = true;
+                if (announce) {
+                    speakText('축하합니다! 새로운 업적을 해금했습니다.');
+                    showToast(`🏆 새로운 업적 해금! [${badge.name}]`, 3000);
+                    vibrate([80, 40, 80, 40, 160]);
+                }
+            }
+        });
+        renderBadges();
+        saveProgress();
+    }
+
+    function renderPath() {
+        const pathContainer = document.getElementById('workout-path');
+        pathContainer.replaceChildren();
+
+        exercises.forEach((ex, idx) => {
+            const node = document.createElement('div');
+            node.className = 'step-node';
+            node.setAttribute('role', 'button');
+            if (idx < completedSteps) {
+                node.classList.add('completed');
+                node.textContent = '✓';
+            } else if (idx === completedSteps) {
+                node.classList.add('active');
+                node.textContent = String(idx + 1);
+            } else {
+                node.textContent = String(idx + 1);
+            }
+
+            const label = document.createElement('div');
+            label.className = 'step-label';
+            label.textContent = ex.name;
+            node.appendChild(label);
+
+            node.addEventListener('click', () => openExerciseModal(idx));
+            pathContainer.appendChild(node);
+        });
+
+        // 코스 마지막: 식단 보상 (모든 운동 완료 후 언제든 열람)
+        const reward = document.createElement('div');
+        reward.className = `step-node reward ${isDietUnlocked() ? '' : 'locked'}`;
+        reward.setAttribute('role', 'button');
+        reward.textContent = '🥗';
+        const rewardLabel = document.createElement('div');
+        rewardLabel.className = 'step-label';
+        rewardLabel.textContent = '식단 가이드';
+        reward.appendChild(rewardLabel);
+        reward.addEventListener('click', () => {
+            if (isDietUnlocked()) showDietModal(false);
+            else showToast(`🔒 운동 ${exercises.length}개를 모두 끝내면 열려요 (${completedSteps}/${exercises.length})`);
+        });
+        pathContainer.appendChild(reward);
+    }
+
+    function isDietUnlocked() { return completedSteps >= exercises.length; }
+
+    // 프로필 탭의 식단 카드
+    let dietViewGoal = null;
+    function renderDietCard() {
+        const card = document.getElementById('diet-card');
+        if (!card) return;
+        card.replaceChildren();
+        if (!isDietUnlocked()) {
+            card.className = 'diet-card locked';
+            card.textContent = `🔒 운동 ${exercises.length}개를 모두 끝내면 열려요 (${completedSteps}/${exercises.length})`;
+            return;
+        }
+        card.className = 'diet-card';
+        const goal = dietViewGoal || document.getElementById('goal-select').value;
+        const tabs = document.createElement('div');
+        tabs.className = 'diet-tabs';
+        const goalNames = { diet: '다이어트', muscle: '몸 만들기', profile: '바디프로필' };
+        Object.keys(dietConfig).forEach(key => {
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.className = `diet-tab ${key === goal ? 'active' : ''}`;
+            tab.textContent = goalNames[key];
+            tab.addEventListener('click', () => { dietViewGoal = key; renderDietCard(); });
+            tabs.appendChild(tab);
+        });
+        card.append(tabs, buildDietSection(goal));
+    }
+
+    function buildDietSection(goal) {
+        const diet = dietConfig[goal] || dietConfig.diet;
+        const section = document.createElement('div');
+        section.className = 'diet-section';
+        const title = document.createElement('h4');
+        title.textContent = diet.title;
+        const list = document.createElement('ul');
+        list.style.marginTop = '8px';
+        list.style.paddingLeft = '20px';
+        diet.items.forEach(itemText => {
+            const item = document.createElement('li');
+            item.textContent = itemText;
+            list.appendChild(item);
+        });
+        section.append(title, list);
+        return section;
+    }
+
+    function showDietModal(celebrate = true) {
+        const goal = document.getElementById('goal-select').value;
+        document.getElementById('diet-celebrate').style.display = celebrate ? 'block' : 'none';
+        document.getElementById('diet-info').replaceChildren(buildDietSection(goal));
+        document.getElementById('diet-modal').style.display = 'flex';
+    }
+
+    function closeDietModal() { document.getElementById('diet-modal').style.display = 'none'; }
+
+    function addXP(amount) {
+        const safeAmount = safeInteger(amount, 0, 0, 10000);
+        currentXP += safeAmount;
+        while (currentXP >= 100) {
+            currentLevel++;
+            currentXP -= 100;
+            speakText('레벨 업!');
+            showToast(`🎉 레벨업! Lv.${currentLevel}`, 3000);
+        }
+        streakDays = calculateStreakDays();
+        checkBadges();
+        saveProgress();
+        updateUI();
+    }
+
+    function completeQuest(btn, questId, xp) {
+        ensureDailyQuestsCurrent();
+        const rewards = { quest_1: 20, quest_2: 10 };
+        if (!Object.prototype.hasOwnProperty.call(rewards, questId)) return;
+        if (completedQuests.includes(questId)) return;
+        questDate = getLocalDateKey();
+        completedQuests.push(questId);
+        disableQuestBtn(btn);
+        addXP(rewards[questId]);
+        vibrate(40);
+    }
+
+    function disableQuestBtn(btnId) {
+        const btn = typeof btnId === 'string' ? document.getElementById(btnId) : btnId;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = '완료됨';
+        }
+    }
+
+    function updateWorkoutPlan() { dietViewGoal = null; renderPath(); renderDietCard(); }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && selectedStepIndex !== null) closeWorkoutModal();
+        if (!document.hidden) {
+            ensureDailyQuestsCurrent();
+            updateUI();
+        }
+    });
+
+    function switchTab(tabName, btnElement) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+        if (btnElement) btnElement.classList.add('active');
+        window.scrollTo(0, 0);
+    }
+
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        if (selectedStepIndex !== null) closeWorkoutModal();
+        const dietModal = document.getElementById('diet-modal');
+        if (dietModal && dietModal.style.display === 'flex') closeDietModal();
+    });
+
+    // ===== 홈 화면 설치 (PWA) =====
+    let deferredInstallPrompt = null;
+    function setupInstallButton() {
+        const btn = document.getElementById('install-btn');
+        window.addEventListener('beforeinstallprompt', event => {
+            event.preventDefault();
+            deferredInstallPrompt = event;
+            btn.style.display = 'block';
+        });
+        btn.addEventListener('click', async () => {
+            if (!deferredInstallPrompt) return;
+            deferredInstallPrompt.prompt();
+            await deferredInstallPrompt.userChoice.catch(() => null);
+            deferredInstallPrompt = null;
+            btn.style.display = 'none';
+        });
+        window.addEventListener('appinstalled', () => {
+            btn.style.display = 'none';
+            showToast('📲 홈 화면에 설치되었습니다!');
+        });
+    }
+
+    function registerServiceWorker() {
+        if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+            navigator.serviceWorker.register('sw.js').catch(error => console.warn('서비스 워커 등록 실패', error));
+        }
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>

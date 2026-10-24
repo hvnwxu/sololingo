@@ -1,0 +1,17 @@
+{
+  "name": "SOLOLINGO - AI 홈트레이닝",
+  "short_name": "SOLOLINGO",
+  "description": "AI가 카메라로 자세를 인식해 운동 횟수를 세어주는 홈트레이닝 앱",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#58cc02",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
