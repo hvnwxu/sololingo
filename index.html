@@ -182,6 +182,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="js/config.js"></script>
 <script>
     let currentXP = 0;
     let currentLevel = 1;
@@ -216,17 +217,11 @@
     let restTimeLeft = 0;
     let plankTimer = null;
 
-    const COMPLEXITY_KEY = 'sololingo_model_complexity';
     // AI 모델: 정확한 모델(1)로 시작하고, 폰이 느리면 자동으로 가벼운 모델(0)로 바꿈
     let poseComplexity = loadComplexity();
     let fpsWindowStart = 0;
     let fpsFrames = 0;
     let fpsChecked = false;
-    const POSE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404';
-
-    // 인식 안정화용 값
-    const VISIBILITY = 0.5;      // 관절이 '보인다'고 판단하는 기준 (0~1)
-    const PLANK_GRACE_MS = 1000; // 플랭크 자세가 이 시간 이상 무너져야 타이머를 멈춤
     let smoothed = {};           // 각도 흔들림을 줄이기 위한 평균값
     let thighRef = 0;            // 서 있을 때 허벅지 길이 (스쿼트 기준값)
     let plankLastGood = 0;
@@ -253,72 +248,6 @@
         smoothed[key] = next;
         return next;
     }
-
-    const exercises = [
-        { name: "스쿼트", type: "squat", instructions: ["폰을 세로로 세워 약 2m 앞에 둡니다.", "발까지 안 보여도 괜찮아요. 엉덩이와 무릎만 보이면 셉니다.", "무릎을 굽혀 앉았다가 다시 일어섭니다."] },
-        { name: "런지", type: "lunge", instructions: ["폰을 세로로 세워 약 2m 앞에 둡니다. 엉덩이와 무릎만 보이면 됩니다.", "한쪽 발을 앞으로 내딛습니다.", "자세가 안정적인 범위에서 무릎을 굽혔다가 돌아옵니다."] },
-        { name: "푸쉬업", type: "pushup", instructions: ["폰을 가로로 눕혀 몸 옆쪽 약 1.5m 바닥에 둡니다.", "어깨·팔꿈치·손목만 보이면 셉니다.", "팔꿈치를 굽혔다가 펴며 시작 자세로 돌아옵니다."] },
-        { name: "플랭크", type: "plank", instructions: ["폰을 가로로 눕혀 몸 옆쪽 약 1.5m 바닥에 둡니다.", "발까지 안 보여도 괜찮아요. 어깨~무릎만 보이면 됩니다.", "어깨, 엉덩이, 무릎(발목)이 일직선이 되게 유지합니다.", "잠깐 흔들리면 시간이 멈췄다가, 자세를 되찾으면 이어서 셉니다."] },
-        { name: "버피테스트", type: "burpee", instructions: ["현재 버전에서는 자동 자세 인식이 지원되지 않습니다.", "수동 완료를 선택할 경우 AI 인식 완료와 별도로 기록됩니다."] }
-    ];
-
-    // 운동별 폰 위치 안내
-    const placementGuides = {
-        front: {
-            title: '📱 폰을 세로로 세워 앞에 두세요',
-            caption: '옆에서 본 모습',
-            lines: ['약 2m 앞, 의자나 선반 위(허리 높이)에 세워두세요.', '화면에 엉덩이와 무릎이 보이면 OK! 발은 안 보여도 돼요.', '정면이나 옆모습 모두 인식돼요.'],
-            speech: '폰을 세로로 세워 2미터 앞에 두세요.'
-        },
-        side: {
-            title: '📱 폰을 가로로 눕혀 몸 옆에 두세요',
-            caption: '위에서 본 모습',
-            lines: ['바닥에 가로로 세워서 몸 옆쪽 약 1.5m에 두세요.', '카메라가 내 옆모습을 보도록 해주세요.', '어깨부터 무릎까지 보이면 OK! 발은 안 보여도 돼요.'],
-            speech: '폰을 가로로 눕혀 몸 옆쪽에 두세요.'
-        },
-        none: {
-            title: '📷 카메라 없이 하는 운동이에요',
-            caption: '',
-            lines: ['버피테스트는 아직 자동 인식이 안 돼요.', '동작을 모두 마치면 아래 \'수동 완료\' 버튼을 눌러주세요.'],
-            speech: '이 운동은 직접 완료 버튼을 눌러주세요.'
-        }
-    };
-    const placementByType = { squat: 'front', lunge: 'front', pushup: 'side', plank: 'side', burpee: 'none' };
-
-    const PLACEMENT_SVG = {
-        front: `<svg viewBox="0 0 260 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <line x1="10" y1="118" x2="250" y2="118" stroke="#ccc" stroke-width="3"/>
-            <rect x="28" y="78" width="34" height="40" rx="3" fill="#e5e5e5"/>
-            <rect x="37" y="46" width="16" height="30" rx="3" fill="#1cb0f6"/>
-            <circle cx="45" cy="52" r="2.5" fill="#fff"/>
-            <circle cx="205" cy="24" r="10" fill="#58cc02"/>
-            <line x1="205" y1="34" x2="205" y2="72" stroke="#58cc02" stroke-width="6" stroke-linecap="round"/>
-            <line x1="205" y1="44" x2="188" y2="62" stroke="#58cc02" stroke-width="5" stroke-linecap="round"/>
-            <line x1="205" y1="44" x2="222" y2="62" stroke="#58cc02" stroke-width="5" stroke-linecap="round"/>
-            <line x1="205" y1="72" x2="195" y2="116" stroke="#58cc02" stroke-width="6" stroke-linecap="round"/>
-            <line x1="205" y1="72" x2="215" y2="116" stroke="#58cc02" stroke-width="6" stroke-linecap="round"/>
-            <line x1="70" y1="100" x2="180" y2="100" stroke="#ffc800" stroke-width="3" stroke-dasharray="6 5"/>
-            <polygon points="180,95 190,100 180,105" fill="#ffc800"/>
-            <text x="125" y="93" text-anchor="middle" font-size="14" font-weight="bold" fill="#3c3c3c">약 2m</text>
-        </svg>`,
-        side: `<svg viewBox="0 0 260 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="10" y="8" width="240" height="114" rx="10" fill="#f7f7f7"/>
-            <circle cx="62" cy="40" r="11" fill="#58cc02"/>
-            <rect x="74" y="33" width="80" height="15" rx="7" fill="#58cc02"/>
-            <rect x="152" y="35" width="70" height="11" rx="5" fill="#58cc02"/>
-            <rect x="82" y="48" width="8" height="14" rx="3" fill="#58cc02"/>
-            <rect x="110" y="104" width="40" height="14" rx="3" fill="#1cb0f6"/>
-            <circle cx="130" cy="104" r="2.5" fill="#fff"/>
-            <line x1="130" y1="98" x2="130" y2="62" stroke="#ffc800" stroke-width="3" stroke-dasharray="6 5"/>
-            <polygon points="125,62 130,52 135,62" fill="#ffc800"/>
-            <text x="140" y="85" font-size="14" font-weight="bold" fill="#3c3c3c">약 1.5m</text>
-        </svg>`,
-        none: `<svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="105" y="10" width="50" height="70" rx="8" fill="#e5e5e5"/>
-            <circle cx="130" cy="45" r="16" fill="none" stroke="#999" stroke-width="4"/>
-            <line x1="100" y1="80" x2="160" y2="10" stroke="#ff4b4b" stroke-width="5" stroke-linecap="round"/>
-        </svg>`
-    };
 
     let guideVisible = false;
 
@@ -353,38 +282,6 @@
             if (ex.type !== 'burpee') document.getElementById('ai-status').textContent = '시작! 자세를 잡아주세요';
         }
     }
-
-    const badges = [
-        { id: 'first_step', name: '🥉 운동 입문자', desc: '첫 번째 운동 단계 완료', unlocked: false, check: () => completedSteps >= 1 },
-        { id: 'streak_7', name: '🥈 7일 연속 운동', desc: '7일 연속 운동 달성', unlocked: false, check: () => streakDays >= 7 },
-        { id: 'profile_challenger', name: '🏆 바디프로필 도전자', desc: '바디프로필 목표로 전 코스 완료', unlocked: false, check: () => completedSteps >= 5 && document.getElementById('goal-select').value === 'profile' },
-        { id: 'level_master', name: '🏆 운동 마스터', desc: '레벨 3 달성', unlocked: false, check: () => currentLevel >= 3 },
-        { id: 'all_clear', name: '🥇 완전 정복', desc: '모든 운동 단계 1회 이상 완료', unlocked: false, check: () => completedSteps >= 5 }
-    ];
-
-    const difficultyConfig = {
-        diet: {
-            beginner: { sets: 3, reps: 10, rest: 30 },
-            intermediate: { sets: 4, reps: 15, rest: 25 },
-            advanced: { sets: 5, reps: 20, rest: 20 }
-        },
-        muscle: {
-            beginner: { sets: 3, reps: 8, rest: 60 },
-            intermediate: { sets: 4, reps: 12, rest: 50 },
-            advanced: { sets: 5, reps: 15, rest: 45 }
-        },
-        profile: {
-            beginner: { sets: 4, reps: 10, rest: 40 },
-            intermediate: { sets: 5, reps: 15, rest: 30 },
-            advanced: { sets: 6, reps: 20, rest: 20 }
-        }
-    };
-
-    const dietConfig = {
-        diet: { title: "균형 식사 예시", items: ["아침: 달걀, 과일, 곡류", "점심: 밥, 단백질 식품, 채소", "저녁: 밥 또는 곡류, 단백질 식품, 채소"] },
-        muscle: { title: "운동일 식사 예시", items: ["아침: 달걀, 오트밀 또는 곡류", "점심: 밥, 단백질 식품, 채소", "저녁: 밥 또는 곡류, 단백질 식품, 채소"] },
-        profile: { title: "균형 식사 예시", items: ["아침: 곡류, 단백질 식품, 과일", "점심: 밥, 단백질 식품, 채소", "저녁: 밥 또는 곡류, 단백질 식품, 채소"] }
-    };
 
     // ===== 모바일 보조 기능 =====
 
