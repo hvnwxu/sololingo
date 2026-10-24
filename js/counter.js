@@ -3,12 +3,21 @@
 let smoothed = {};           // 각도 흔들림을 줄이기 위한 평균값
 let thighRef = 0;            // 서 있을 때 허벅지 길이 (스쿼트 기준값)
 let plankLastGood = 0;
+let shallowDip = false;      // 내려가다 말고 다시 올라왔는지 ("조금 더 깊이" 안내용)
 
 function resetRecognitionState() {
     smoothed = {};
     thighRef = 0;
     plankLastGood = 0;
+    shallowDip = false;
     motionState = 'UP';
+}
+
+// 운동별로 시작(카운트다운)에 필요한 관절이 보이는지
+function requiredJointsVisible(type, J, vis) {
+    if (type === 'pushup') return [J.shoulder, J.elbow, J.wrist].every(vis);
+    if (type === 'plank') return vis(J.shoulder) && vis(J.hip) && (vis(J.knee) || vis(J.ankle));
+    return vis(J.shoulder) && vis(J.hip) && vis(J.knee);
 }
 
 // 최근 값과 섞어서 한 프레임의 튀는 값을 줄임
@@ -104,11 +113,16 @@ function onPoseResults(results) {
 
     if (!results.poseLandmarks) {
         if (guideVisible) return;
+        if (startPhase !== 'go') {
+            updateStartPhase(false);
+            return;
+        }
         if (currentEx.type === 'plank') pausePlankIfStale();
         else motionState = 'UP';
         status.textContent = currentEx.type === 'burpee'
             ? '수동 완료만 지원되는 운동입니다.'
             : '사람이 보이지 않아요. 화면 안으로 들어와 주세요';
+        if (coachHint('lost', '몸이 안 보여요. 화면 안으로 들어와 주세요.')) setStageView('preview', true);
         return;
     }
 
@@ -143,13 +157,22 @@ function onPoseResults(results) {
     const useRight = landmarkSideScore(landmarks, scoreKeys.map(k => RIGHT[k])) >= landmarkSideScore(landmarks, scoreKeys.map(k => LEFT[k]));
     const J = useRight ? RIGHT : LEFT;
 
+    // '시작하기'를 누른 뒤 물러나는 동안은 세지 않고, 몸이 보이면 3, 2, 1 카운트다운 (coach.js)
+    if (startPhase !== 'go') {
+        updateStartPhase(requiredJointsVisible(currentEx.type, J, vis));
+        return;
+    }
+
     if (currentEx.type === 'squat' || currentEx.type === 'lunge') {
         // 엉덩이와 무릎만 보이면 인식 가능 (발목은 있으면 더 정확)
         if (!vis(J.hip) || !vis(J.knee)) {
             motionState = 'UP';
             status.textContent = '엉덩이와 무릎이 화면에 보이게 해주세요';
+            if (coachHint('joints', '엉덩이와 무릎이 화면에 보이게 해 주세요.')) setStageView('preview', true);
             return;
         }
+        coachHint(null);
+        setStageView('focus');
         // 허벅지의 세로 길이: 서 있으면 길고, 앉으면 짧아짐 (정면·측면 모두 동작)
         // 몸통 길이로 나눠서, 카메라에서 멀어지거나 가까워져도 값이 변하지 않게 함
         const thigh = Math.max(0, P[J.knee].y - P[J.hip].y);
@@ -167,46 +190,75 @@ function onPoseResults(results) {
 
         let isDown;
         let isUp;
+        let bent; // 눈에 띄게 굽히긴 했는지 (덜 앉음 판정용)
         if (vis(J.ankle)) {
             const kneeAngle = smooth('knee', calculateAngle(P[J.hip], P[J.knee], P[J.ankle]));
             isDown = kneeAngle < 115 || ratio < 0.5;
             isUp = kneeAngle > 150 && ratio > 0.75;
+            bent = kneeAngle < SHALLOW_KNEE || ratio < SHALLOW_RATIO;
         } else {
             isDown = ratio < 0.55;
             isUp = ratio > 0.8;
+            bent = ratio < SHALLOW_RATIO;
         }
 
         if (isDown && motionState === 'UP') {
             motionState = 'DOWN';
+            shallowDip = false;
             status.textContent = '⬇️ 내려가는 중';
         } else if (isUp && motionState === 'DOWN') {
             motionState = 'UP';
             incrementRep(targetReps);
-        } else if (motionState === 'UP' && !isDown) {
+        } else if (motionState === 'UP') {
+            // 굽혔다가 '앉음'까지 못 가고 다시 일어서면 → 세지 않고 "더 깊이" 안내
+            if (bent) shallowDip = true;
+            else if (isUp && shallowDip) {
+                shallowDip = false;
+                coachNow('shallow', currentEx.type === 'squat' ? '조금 더 깊이 앉아 주세요.' : '조금 더 깊이 내려가 주세요.');
+            }
             status.textContent = vis(J.ankle) ? '좋아요! 앉았다 일어나세요' : '좋아요! 발이 안 보여도 셀 수 있어요';
         }
     } else if (currentEx.type === 'pushup') {
         if (![J.shoulder, J.elbow, J.wrist].every(vis)) {
             motionState = 'UP';
             status.textContent = '어깨·팔꿈치·손목이 보이도록 폰을 몸 옆에 두세요';
+            if (coachHint('joints', '어깨, 팔꿈치, 손목이 보이게 해 주세요.')) setStageView('preview', true);
             return;
         }
         const angle = smooth('elbow', calculateAngle(P[J.shoulder], P[J.elbow], P[J.wrist]));
+
+        // 몸 일직선 확인: 엉덩이와 무릎(없으면 발목)이 보일 때만
+        const lower = vis(J.knee) ? J.knee : (vis(J.ankle) ? J.ankle : null);
+        const bodyBent = vis(J.hip) && lower !== null
+            && smooth('line', calculateAngle(P[J.shoulder], P[J.hip], P[lower])) < BODY_LINE_MIN;
+        const lineWarn = coachHint(bodyBent ? 'line' : null, '엉덩이를 펴서 몸을 일직선으로 만들어 주세요.');
+        setStageView('focus', lineWarn);
+
         if (angle < 100 && motionState === 'UP') {
             motionState = 'DOWN';
+            shallowDip = false;
             status.textContent = '⬇️ 팔을 굽히는 중';
         } else if (angle > 145 && motionState === 'DOWN') {
             motionState = 'UP';
             incrementRep(targetReps);
+        } else if (motionState === 'UP') {
+            if (angle < SHALLOW_ELBOW) shallowDip = true;
+            else if (angle > 145 && shallowDip) {
+                shallowDip = false;
+                coachNow('shallow', '조금 더 깊이 내려가 주세요.');
+            }
         }
     } else if (currentEx.type === 'plank') {
         const now = performance.now();
         let problem = '';
+        let speech = '';
 
         // 발목이 안 보이면 무릎을 대신 사용 → 어깨~무릎까지만 보여도 인식
         const lower = vis(J.ankle) ? J.ankle : (vis(J.knee) ? J.knee : null);
-        if (!vis(J.shoulder) || !vis(J.hip) || lower === null) {
+        const jointsMissing = !vis(J.shoulder) || !vis(J.hip) || lower === null;
+        if (jointsMissing) {
             problem = '어깨·엉덩이·무릎이 보이게 해주세요';
+            speech = '어깨, 엉덩이, 무릎이 보이게 해 주세요.';
         } else {
             const bodyAngle = smooth('body', calculateAngle(P[J.shoulder], P[J.hip], P[lower]));
 
@@ -219,8 +271,20 @@ function onPoseResults(results) {
                 isLying = Math.abs(P[J.shoulder].x - P[J.hip].x) > Math.abs(P[J.shoulder].y - P[J.hip].y);
             }
 
-            if (!isLying) problem = '엎드려서 팔꿈치나 손으로 몸을 받쳐주세요';
-            else if (bodyAngle < 145) problem = '⚠️ 엉덩이를 어깨·다리와 일직선으로 맞춰주세요';
+            if (!isLying) {
+                problem = '엎드려서 팔꿈치나 손으로 몸을 받쳐주세요';
+                speech = '엎드려서 팔꿈치나 손으로 몸을 받쳐 주세요.';
+            } else if (bodyAngle < BODY_LINE_MIN) {
+                problem = '⚠️ 엉덩이를 어깨·다리와 일직선으로 맞춰주세요';
+                speech = '엉덩이를 어깨, 다리와 일직선으로 맞춰 주세요.';
+            }
+        }
+
+        if (!problem) {
+            coachHint(null);
+            setStageView('focus');
+        } else if (coachHint(problem, speech)) {
+            setStageView(jointsMissing ? 'preview' : 'focus', true);
         }
 
         if (!problem) {
@@ -249,7 +313,10 @@ function startPlankTimer(targetReps) {
         }
         countReps = Math.min(targetReps, countReps + 1);
         setRepsDisplay(countReps, true);
-        if (countReps % 5 === 0) { speakText(`${countReps}초`); vibrate(60); }
+        const left = targetReps - countReps;
+        if (left > 0 && left <= 3) { speakText(String(left)); beep('tick'); }
+        else if (left === 10 && targetReps > 15) speakText('10초 남았어요');
+        else if (countReps % 5 === 0) { speakText(`${countReps}초`); vibrate(60); }
         if (countReps >= targetReps) {
             stopPlankTimer(false);
             handleSetCompletion();
@@ -262,7 +329,13 @@ function incrementRep(targetReps) {
     countReps = Math.min(targetReps, countReps + 1);
     setRepsDisplay(countReps, true);
     document.getElementById('ai-status').textContent = `인식 완료 (${countReps}/${targetReps})`;
-    speakText(`${countReps}`);
+    flashRep();
+    beep('rep');
+    const left = targetReps - countReps;
+    let say = `${countReps}`;
+    if (left === 1) say += ', 마지막 하나!';
+    else if (left === 5 && targetReps >= 10) say += ', 다섯 개 남았어요';
+    speakText(say);
     vibrate(60);
 
     if (countReps >= targetReps) handleSetCompletion();

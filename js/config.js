@@ -8,6 +8,28 @@ const POSE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404';
 const VISIBILITY = 0.5;      // 관절이 '보인다'고 판단하는 기준 (0~1)
 const PLANK_GRACE_MS = 1000; // 플랭크 자세가 이 시간 이상 무너져야 타이머를 멈춤
 
+// 2m 밖에서도 알 수 있게 하는 안내 (음성·효과음·화면 색)
+const SPEAK = { COACH: 1, COUNT: 2, IMPORTANT: 3 }; // 음성 우선순위 (utils.js의 speakText)
+const VOICE_KEY = 'sololingo_voice_mode';
+const VOICE_MODES = [
+    { id: 'all', icon: '🔊', label: '음성: 횟수 + 자세 안내' },
+    { id: 'count', icon: '🔢', label: '음성: 횟수만' },
+    { id: 'off', icon: '🔇', label: '소리 끔' }
+];
+const READY_HOLD_MS = 1000;   // 몸이 이 시간 동안 계속 보이면 카운트다운 시작
+const COACH_HOLD_MS = 1500;   // 문제가 이 시간 넘게 계속될 때만 말로 안내 (잠깐 흔들린 건 무시)
+const COACH_REPEAT_MS = 5000; // 같은 안내는 이 간격보다 자주 말하지 않음
+const SHALLOW_RATIO = 0.65;   // 스쿼트·런지: 허벅지 비율이 이만큼 줄었는데 '앉음'까지 못 가면 "더 깊이"
+const SHALLOW_KNEE = 135;     // 스쿼트·런지: 무릎 각도 기준 (발목이 보일 때)
+const SHALLOW_ELBOW = 125;    // 푸쉬업: 팔꿈치가 이만큼 굽었는데 100°까지 못 가면 "더 깊이"
+const BODY_LINE_MIN = 145;    // 푸쉬업·플랭크: 어깨-엉덩이-무릎 각도가 이보다 작으면 몸이 꺾인 것
+
+// 시작 전 '뒤로 물러나기' 안내 (폰 위치 종류별: placementByType)
+const WAIT_GUIDE = {
+    front: { icon: '🚶', text: '뒤로 물러나 몸 전체가 보이게 서 주세요', speech: '뒤로 물러나서, 몸 전체가 화면에 보이게 서 주세요.', remind: '아직 몸이 다 안 보여요. 조금 더 뒤로 가 주세요.' },
+    side: { icon: '🙆', text: '폰 옆에서 운동 자세를 잡아 주세요', speech: '폰 옆에서 운동 자세를 잡아 주세요. 몸이 보이면 시작할게요.', remind: '아직 몸이 다 안 보여요. 폰 위치를 맞춰 주세요.' }
+};
+
 const exercises = [
     { name: "스쿼트", type: "squat", instructions: ["폰을 세로로 세워 약 2m 앞에 둡니다.", "발까지 안 보여도 괜찮아요. 엉덩이와 무릎만 보이면 셉니다.", "무릎을 굽혀 앉았다가 다시 일어섭니다."] },
     { name: "런지", type: "lunge", instructions: ["폰을 세로로 세워 약 2m 앞에 둡니다. 엉덩이와 무릎만 보이면 됩니다.", "한쪽 발을 앞으로 내딛습니다.", "자세가 안정적인 범위에서 무릎을 굽혔다가 돌아옵니다."] },

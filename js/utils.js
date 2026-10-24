@@ -3,14 +3,26 @@
 // ===== 모바일 보조 기능 =====
 
 // 음성 안내 (TTS)
-function speakText(text) {
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ko-KR';
-        utterance.rate = 1.1;
-        window.speechSynthesis.speak(utterance);
+// priority: SPEAK.COACH(자세 안내) < SPEAK.COUNT(횟수) < SPEAK.IMPORTANT(세트 시작·완료, 카운트다운)
+// - 같거나 더 중요한 말은 지금 말을 끊고 바로 말함 (횟수가 밀리지 않게)
+// - 덜 중요한 말은 중요한 말을 끊지 않음: 횟수는 뒤에 이어서, 자세 안내는 건너뜀
+let speakingPriority = 0;
+function speakText(text, priority = SPEAK.COUNT) {
+    if (!('speechSynthesis' in window) || !voiceAllows(priority)) return;
+    const synth = window.speechSynthesis;
+    const busy = synth.speaking || synth.pending;
+    if (busy && priority < speakingPriority) {
+        if (priority === SPEAK.COACH) return;
+    } else {
+        synth.cancel();
     }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ko-KR';
+    utterance.rate = 1.1;
+    utterance.onstart = () => { speakingPriority = priority; };
+    utterance.onend = utterance.onerror = () => { if (!synth.speaking) speakingPriority = 0; };
+    speakingPriority = Math.max(busy ? speakingPriority : 0, priority);
+    synth.speak(utterance);
 }
 
 // 진동 (갤럭시 등 안드로이드 폰에서 동작)

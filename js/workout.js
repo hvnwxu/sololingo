@@ -20,17 +20,24 @@ function showPlacementGuide(speak = true) {
     document.getElementById('place-guide').style.display = 'flex';
     guideVisible = true;
     stopPlankTimer(false);
-    if (speak) speakText(guide.speech);
+    cancelCountdown();
+    setStageView('preview');
+    if (speak) speakText(guide.speech, SPEAK.IMPORTANT);
 }
 
 function hidePlacementGuide() {
     document.getElementById('place-guide').style.display = 'none';
     guideVisible = false;
     resetRecognitionState();
+    unlockAudio(); // 화면을 누른 지금 소리를 켜 둬야 나중에 효과음이 나옴
     if (selectedStepIndex !== null) {
         const ex = exercises[selectedStepIndex];
-        speakText(ex.type === 'burpee' ? '시작!' : `${ex.name} 시작!`);
-        if (ex.type !== 'burpee') document.getElementById('ai-status').textContent = '시작! 자세를 잡아주세요';
+        if (ex.type === 'burpee') {
+            startPhase = 'go';
+            speakText('시작!', SPEAK.IMPORTANT);
+        } else {
+            enterWaiting(true); // 물러날 시간을 주고, 몸이 보이면 3, 2, 1 후에 셈 (coach.js)
+        }
     }
 }
 
@@ -39,10 +46,10 @@ function handleSetCompletion() {
     isCompletingSet = true;
     vibrate([120, 60, 120]);
     if (currentSet < totalSets) {
-        speakText('세트 완료! 휴식을 취하세요.');
+        speakText('세트 완료! 휴식을 취하세요.', SPEAK.IMPORTANT);
         startRestPhase();
     } else {
-        speakText('축하합니다! 모든 세트를 마쳤습니다.');
+        speakText('축하합니다! 모든 세트를 마쳤습니다.', SPEAK.IMPORTANT);
         completionTimeout = setTimeout(() => {
             completionTimeout = null;
             finishCurrentStep(false);
@@ -60,12 +67,17 @@ function startRestPhase() {
     restInterval = setInterval(() => {
         restTimeLeft--;
         document.getElementById('rest-countdown').textContent = String(Math.max(0, restTimeLeft));
-        if (restTimeLeft === 3) speakText('3초 전');
+        if (restTimeLeft === 3) speakText('3초 전', SPEAK.IMPORTANT);
         if (restTimeLeft <= 0) endRestPhase();
     }, 1000);
 }
 
-function skipRest() { endRestPhase(); }
+// 건너뛰기는 폰 앞에서 누르므로, 다시 물러날 시간을 주고 카운트다운 후에 셈
+function skipRest() {
+    endRestPhase();
+    const ex = exercises[selectedStepIndex];
+    if (ex && ex.type !== 'burpee') enterWaiting(true);
+}
 
 function endRestPhase() {
     if (!isResting) return;
@@ -80,8 +92,9 @@ function endRestPhase() {
     document.getElementById('current-set').textContent = String(currentSet);
     setRepsDisplay(0);
     document.getElementById('ai-status').textContent = `${currentSet}세트 시작!`;
-    speakText(`${currentSet}세트 시작!`);
+    speakText(`${currentSet}세트 시작!`, SPEAK.IMPORTANT);
     vibrate(200);
+    setStageView('focus');
 }
 
 function openExerciseModal(index) {
@@ -98,6 +111,9 @@ function openExerciseModal(index) {
     resetRecognitionState();
     isResting = false;
     isCompletingSet = false;
+    startPhase = 'waiting';
+    unlockAudio();
+    updateVoiceButton();
 
     const ex = exercises[index];
     const goal = document.getElementById('goal-select').value;
@@ -169,6 +185,8 @@ function openExerciseModal(index) {
 
 function stopWorkoutResources() {
     stopPlankTimer(false);
+    cancelCountdown();
+    setStageView('preview');
     if (restInterval) { clearInterval(restInterval); restInterval = null; }
     if (completionTimeout) { clearTimeout(completionTimeout); completionTimeout = null; }
     isResting = false;

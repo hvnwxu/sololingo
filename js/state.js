@@ -33,6 +33,9 @@ let restInterval = null;
 let restTimeLeft = 0;
 let plankTimer = null;
 
+// 시작 단계: 'waiting'(뒤로 물러나는 중) → 'countdown'(3, 2, 1) → 'go'(이때부터 횟수를 셈)
+let startPhase = 'go';
+
 // AI 모델: 정확한 모델(1)로 시작하고, 폰이 느리면 자동으로 가벼운 모델(0)로 바꿈
 let poseComplexity = loadComplexity();
 let fpsWindowStart = 0;

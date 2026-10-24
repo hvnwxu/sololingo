@@ -138,13 +138,23 @@
         <div class="ws-top">
             <button class="ws-btn" type="button" onclick="closeWorkoutModal()" aria-label="운동 창 닫기">✕ 닫기</button>
             <h2 id="modal-title">스쿼트</h2>
-            <button class="ws-btn" type="button" id="flip-btn" onclick="flipCamera()" aria-label="전면/후면 카메라 전환">🔄 전환</button>
+            <div class="ws-actions">
+                <button class="ws-btn ws-icon" type="button" id="voice-btn" onclick="cycleVoiceMode()" aria-label="음성: 횟수 + 자세 안내">🔊</button>
+                <button class="ws-btn" type="button" id="flip-btn" onclick="flipCamera()" aria-label="전면/후면 카메라 전환">🔄 전환</button>
+            </div>
         </div>
 
-        <div class="stage">
+        <div class="stage" data-mode="preview">
             <video id="webcam-video" playsinline muted></video>
             <canvas id="output-canvas" class="mirror"></canvas>
+            <div class="rep-flash" id="rep-flash"></div>
             <div class="camera-overlay" id="ai-status">카메라 연결 중...</div>
+
+            <!-- 시작 전 안내와 3, 2, 1 카운트다운 (2m 밖에서도 보이게 크게) -->
+            <div class="stage-center" id="stage-center" aria-live="polite">
+                <div class="sc-big" id="sc-big"></div>
+                <div class="sc-small" id="sc-small"></div>
+            </div>
 
             <div class="big-counter">
                 <div class="big-reps"><span id="current-reps">0</span><small> / <span id="modal-reps">15</span><span id="unit-label">회</span></small></div>
@@ -156,6 +166,7 @@
                     <div id="pg-figure"></div>
                     <h3 id="pg-title">폰 위치</h3>
                     <ul id="pg-lines"></ul>
+                    <p class="pg-sound">🔊 소리를 켜 두면 횟수와 자세를 말로 알려 드려요</p>
                     <button class="action-btn" type="button" onclick="hidePlacementGuide()">준비 완료! 시작하기</button>
                 </div>
             </div>
@@ -202,6 +213,7 @@
 <script src="js/storage.js"></script>
 <script src="js/state.js"></script>
 <script src="js/utils.js"></script>
+<script src="js/coach.js"></script>
 <script src="js/camera.js"></script>
 <script src="js/counter.js"></script>
 <script src="js/workout.js"></script>

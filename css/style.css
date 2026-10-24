@@ -348,10 +348,12 @@ nav {
     padding: calc(10px + var(--safe-top)) 12px 10px;
 }
 .ws-top h2 { font-size: 1.15rem; flex: 1; text-align: center; }
+.ws-actions { display: flex; gap: 6px; }
 .ws-btn {
     background: rgba(255,255,255,0.14); color: #fff; border: 0; border-radius: 12px;
     padding: 10px 12px; font-weight: 700; font-size: 0.9rem; cursor: pointer; min-width: 64px;
 }
+.ws-btn.ws-icon { min-width: 44px; padding: 10px; font-size: 1.1rem; }
 
 .stage { position: relative; flex: 1; min-height: 0; background: #000; overflow: hidden; }
 /* 영상은 숨기고, canvas에 영상+뼈대를 함께 그려서 위치가 어긋나지 않게 함 */
@@ -363,7 +365,53 @@ nav {
     position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
     max-width: calc(100% - 24px); text-align: center;
     background: rgba(0, 0, 0, 0.65); color: #fff;
-    padding: 8px 14px; border-radius: 20px; font-size: 0.9rem; font-weight: bold;
+    padding: 8px 14px; border-radius: 20px; font-size: 1rem; font-weight: bold;
+}
+
+/* ===== 2m 밖에서도 보이는 운동 화면 =====
+   .stage의 data-mode: preview(영상 위주) / waiting(물러나기 안내) / countdown(3, 2, 1) / focus(큰 숫자)
+   색과 투명도만 바꿔서 폰이 느려지지 않게 함 (AI 인식에는 영향 없음: AI는 숨긴 <video>를 직접 봄) */
+.camera-overlay { z-index: 4; }
+
+/* 1회 셀 때 초록 번쩍 */
+.rep-flash { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; background: rgba(88, 204, 2, 0.45); }
+.rep-flash.on { animation: rep-flash 0.45s ease-out; }
+@keyframes rep-flash { from { opacity: 1; } to { opacity: 0; } }
+
+/* 몸이 안 보이거나 자세가 틀리면 주황 테두리 */
+.stage.warn::after {
+    content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+    border: 10px solid #ff9600; animation: warn-pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes warn-pulse { from { opacity: 1; } to { opacity: 0.45; } }
+.stage.warn .camera-overlay { background: #ff9600; color: #fff; font-size: 1.1rem; }
+
+/* 시작 전 안내 / 카운트다운 */
+.stage-center {
+    display: none; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+    flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    padding: 24px; background: rgba(0, 0, 0, 0.45); color: #fff;
+}
+.stage[data-mode="waiting"] .stage-center,
+.stage[data-mode="countdown"] .stage-center { display: flex; }
+.stage[data-mode="waiting"] .big-counter,
+.stage[data-mode="countdown"] .big-counter { display: none; }
+.sc-big { font-size: clamp(4rem, 16vh, 7rem); font-weight: 900; line-height: 1; }
+.sc-small { font-size: 1.6rem; font-weight: 800; line-height: 1.35; margin-top: 14px; max-width: 14em; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
+.stage[data-mode="countdown"] .sc-big { font-size: clamp(9rem, 45vh, 18rem); color: var(--accent); }
+
+/* 운동 중: 영상은 흐리게, 횟수는 화면 가운데 크게 */
+.stage[data-mode="focus"] #output-canvas { opacity: 0.35; }
+.stage[data-mode="focus"] .big-counter {
+    top: 0; bottom: 0; padding: 0 16px; background: none;
+    flex-direction: column; justify-content: center; align-items: center; gap: 10px;
+}
+.stage[data-mode="focus"] .big-reps { font-size: clamp(8rem, 40vh, 20rem); text-align: center; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); }
+.stage[data-mode="focus"] .big-reps small { display: block; font-size: clamp(1.8rem, 7vh, 3.2rem); margin-top: 6px; }
+.stage[data-mode="focus"] .big-set { font-size: clamp(1.6rem, 6vh, 2.6rem); text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+    .stage.warn::after { animation: none; }
 }
 
 /* 2m 떨어져서도 보이는 큰 숫자 */
@@ -439,6 +487,7 @@ nav {
 .pg-card h3 { font-size: 1.05rem; margin-bottom: 8px; }
 .pg-card ul { text-align: left; padding-left: 20px; font-size: 0.9rem; line-height: 1.5; color: var(--text-muted); }
 .pg-card .pg-caption { font-size: 0.75rem; color: var(--text-faint); margin-bottom: 6px; }
+.pg-card .pg-sound { margin-top: 8px; padding: 6px 10px; border-radius: 10px; font-size: 0.8rem; font-weight: 700; color: var(--secondary-ink); background: var(--secondary-soft); }
 .link-btn { background: none; border: 0; color: var(--secondary); font-weight: 700; font-size: 0.9rem; cursor: pointer; padding: 6px 0; }
 
 /* 식단 가이드 (프로필) */
@@ -463,5 +512,6 @@ nav {
     .pg-card #pg-figure { grid-row: 1 / span 2; margin-bottom: 0; }
     .pg-card h3 { font-size: 0.95rem; margin-bottom: 4px; }
     .pg-card ul { font-size: 0.8rem; line-height: 1.4; }
+    .pg-card .pg-sound { grid-column: 1 / -1; margin-top: 6px; }
     .pg-card .action-btn { grid-column: 1 / -1; margin-top: 8px; padding: 10px; }
 }
