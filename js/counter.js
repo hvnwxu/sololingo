@@ -229,6 +229,10 @@ function calculateAngle(p1, p2, p3) {
 
 function isLandmarkVisible(point, threshold = VISIBILITY) {
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+    // 화면 밖(가장자리 포함) 관절은 MediaPipe가 위치를 추측한 값이라 visibility가 높아도 믿지 않음
+    // (폰에 다가가면 무릎·발목이 화면 아래로 나가는데, 추측한 위치로 계산하면 숙이기만 해도 스쿼트로 셌음)
+    const m = FRAME_MARGIN;
+    if (point.x < m || point.x > 1 - m || point.y < m || point.y > 1 - m) return false;
     const visibility = point.visibility ?? 1;
     return Number.isFinite(visibility) && visibility >= threshold;
 }
@@ -357,6 +361,19 @@ function onPoseResults(results) {
 
     if (currentEx.type === 'squat' || currentEx.type === 'lunge') {
         const isLunge = currentEx.type === 'lunge';
+
+        // 폰에 너무 가까우면(약 1m 안) 세지 않음
+        // 가까이서는 원근 때문에 몸 비율이 크게 틀어짐: 폰을 보려고 숙이면 어깨가 카메라에 가까워져 2배로 커 보이고,
+        // 그만큼 허벅지가 짧아 보여서 앉은 걸로 셌음 (화면 짧은 쪽 길이로 나눠서 폰 방향과 상관없이 같은 기준)
+        if (vis(J.shoulder) && vis(J.hip) && bodyScale(P, J) / Math.min(W, H) > TOO_CLOSE_SCALE) {
+            motionState = 'UP';
+            downSince = 0;
+            formRep = null;
+            status.textContent = '너무 가까워요. 뒤로 물러나 주세요';
+            if (coachHint('close', '너무 가까워요. 뒤로 물러나 주세요.')) setStageView('preview', true);
+            return;
+        }
+
         // 두 다리를 다 봄
         // - 스쿼트: 덜 굽힌 다리 기준 → 두 다리를 같이 굽혀야 셈 (걷거나 발을 고쳐 디딜 때 한쪽만 굽는 건 안 셈)
         // - 런지: 더 굽힌 다리(앞다리) 기준 (뒷다리는 무릎을 바닥까지 내려도 허벅지가 세로로 길게 남아서)
@@ -379,7 +396,9 @@ function onPoseResults(results) {
         const pick = isLunge ? Math.min : Math.max;
         const ratio = pick(...legs.map(leg => leg.ratio));
         const knees = legs.map(leg => leg.kneeAngle).filter(angle => angle !== null);
-        const kneeAngle = knees.length ? pick(...knees) : null;
+        // 스쿼트는 보이는 다리 모두 무릎 각도를 잴 수 있을 때만 사용
+        // (한쪽 발목이 가려지면 굽힌 다리 각도만 남아서 '두 다리를 다 굽혀야 셈'이 깨짐 → 이때는 허벅지 비율로 판정)
+        const kneeAngle = knees.length && (isLunge || knees.length === legs.length) ? pick(...knees) : null;
 
         let isDown;
         let isUp;
