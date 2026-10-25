@@ -48,7 +48,8 @@ function handleSetCompletion() {
     if (currentSet < totalSets) {
         // 자세 판정이 있는 운동(스쿼트·런지)은 이번 세트 자세 요약을 휴식 화면에 보여 주고 말해 줌
         const setStats = formSets[formSets.length - 1];
-        const formText = setStats?.reps ? `${setStats.reps}회 중 좋은 자세 ${setStats.good}회. ` : '';
+        const unit = setStats && formUnit(setStats.type);
+        const formText = setStats?.reps ? `${setStats.reps}${unit} 중 좋은 자세 ${setStats.good}${unit}. ` : '';
         document.getElementById('rest-form').textContent = formSummaryText(setStats);
         speakText(`세트 완료! ${formText}휴식을 취하세요.`, SPEAK.IMPORTANT);
         startRestPhase();
@@ -282,7 +283,8 @@ function showFormReport(report, name) {
         .sort((a, b) => total.issues[b] - total.issues[a])[0];
     if (worst) notes.push(`💡 다음에는 "${texts[worst].speeches[0]}"에 집중해 보세요.`);
     Object.entries(texts).forEach(([key, issue]) => {
-        if (issue.unchecked && !total.checked[key]) notes.push(`ℹ️ ${issue.unchecked}`);
+        const note = `ℹ️ ${issue.unchecked}`;
+        if (issue.unchecked && !total.checked[key] && !notes.includes(note)) notes.push(note);
     });
     document.getElementById('fr-note').textContent = notes.join(' ');
 
