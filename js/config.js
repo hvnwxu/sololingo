@@ -6,6 +6,7 @@ const POSE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404';
 
 // 인식 안정화용 값
 const VISIBILITY = 0.5;      // 관절이 '보인다'고 판단하는 기준 (0~1)
+const FRAME_MARGIN = 0.03;   // 화면 가장자리에서 이 비율 안쪽에 있어야 '보인다'고 판단 (화면 밖 관절은 추측값)
 const PLANK_GRACE_MS = 1000; // 플랭크 자세가 이 시간 이상 무너져야 타이머를 멈춤
 
 // 2m 밖에서도 알 수 있게 하는 안내 (음성·효과음·화면 색)
@@ -24,10 +25,10 @@ const SQUAT_DOWN_KNEE = 130;  // 스쿼트: 무릎 각도가 이보다 작으면
 const SQUAT_DOWN_RATIO = 0.65; // 스쿼트: 허벅지 비율이 이보다 작으면 '앉음' (0.5 → 0.65, 발목이 안 보이면 +0.05)
 const SHALLOW_RATIO = 0.75;   // 스쿼트: 허벅지 비율이 이만큼 줄었는데 '앉음'까지 못 가면 "더 깊이"
 const SHALLOW_KNEE = 145;     // 스쿼트: 무릎 각도 기준 (발목이 보일 때)
-const LUNGE_DOWN_RATIO = 0.6;     // 런지: 앞다리 허벅지 비율이 이보다 작으면 '내려감'
-const LUNGE_DOWN_KNEE = 125;      // 런지: 앞다리 무릎 각도가 이보다 작으면 '내려감'
-const LUNGE_SHALLOW_RATIO = 0.72; // 런지: "더 깊이" 안내 기준
-const LUNGE_SHALLOW_KNEE = 140;
+const LUNGE_DOWN_RATIO = 0.68;    // 런지: 앞다리 허벅지 비율이 이보다 작으면 '내려감' (0.6 → 0.68: 허벅지 기울기 53° → 47°)
+const LUNGE_DOWN_KNEE = 132;      // 런지: 앞다리 무릎 각도가 이보다 작으면 '내려감' (125° → 132°)
+const LUNGE_SHALLOW_RATIO = 0.77; // 런지: "더 깊이" 안내 기준 (내려감 기준보다 위에 있어야 해서 같이 올림)
+const LUNGE_SHALLOW_KNEE = 145;
 const SHALLOW_ELBOW = 125;    // 푸쉬업: 팔꿈치가 이만큼 굽었는데 100°까지 못 가면 "더 깊이"
 const BODY_LINE_MIN = 145;    // 푸쉬업·플랭크: 어깨-엉덩이-무릎 각도가 이보다 작으면 몸이 꺾인 것
 
@@ -35,6 +36,7 @@ const BODY_LINE_MIN = 145;    // 푸쉬업·플랭크: 어깨-엉덩이-무릎 �
 const SHOULDER_SCALE = 0.6;   // 몸 크기 = max(몸통 길이, 어깨 너비 ÷ 이 값) → 정면에서 숙이거나 카메라와 거리가 바뀌어도 비율 유지
 const DOWN_HOLD_MS = 150;     // '앉음'이 이 시간 넘게 계속돼야 인정 (한두 프레임 튀는 값 무시)
 const REP_MIN_MS = 700;       // 직전 횟수에서 이 시간 안에는 또 세지 않음 (한 번 했는데 두 번 세는 것 방지)
+const TOO_CLOSE_SCALE = 0.6;  // 몸 크기 ÷ 화면 짧은 쪽 길이가 이보다 크면 너무 가까움 → 세지 않음 (약 1m, 2m에서는 약 0.27)
 
 // 자세 판정: 1회가 끝날 때마다 규칙으로 판정 (자세가 나빠도 횟수는 셈)
 // ⚠️ 처음 정한 값. 직접 운동하면서 조정하고, 바꾼 이유는 PLAN.md 조정 기록표에 남기기
@@ -45,7 +47,7 @@ const REP_MIN_MS = 700;       // 직전 횟수에서 이 시간 안에는 또 �
 // kneeInMax: 앞 무릎이 엉덩이-발목 선에서 안쪽으로 벗어난 거리 ÷ 엉덩이 너비가 이보다 크면 "무릎 모임" (정면일 때만)
 const FORM_RULES = {
     squat: { depthKnee: 110, depthRatio: 0.5, leanMax: 50 },  // 횟수는 130° / 0.65부터 셈
-    lunge: { depthKnee: 105, depthRatio: 0.45, leanMax: 30, kneeInMax: 0.5 } // 횟수는 125° / 0.6부터 셈
+    lunge: { depthKnee: 105, depthRatio: 0.45, leanMax: 30, kneeInMax: 0.5 } // 횟수는 132° / 0.68부터 셈
 };
 const SIDE_VIEW_MAX = 0.35;    // 어깨 너비 ÷ 몸통 길이가 이보다 작으면 옆모습, 크거나 같으면 정면
 const FORM_MIN_FRAMES = 3;     // 1회 동안 관절이 이 프레임 수 이상 보였을 때만 판정 (확실하지 않으면 지적 안 함)
