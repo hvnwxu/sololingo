@@ -452,6 +452,16 @@ function onPoseResults(results) {
             isUp = ratio > 0.8;
             bent = ratio < (isLunge ? LUNGE_SHALLOW_RATIO : SHALLOW_RATIO);
         }
+        // 스쿼트: 엉덩이가 실제로 내려가야 '앉음' (서 있을 때 엉덩이 높이에서 몸 크기의 SQUAT_HIP_DROP배 이상)
+        // 상체를 숙이고 팔을 휘두르면 팔이 무릎을 가려 다리가 굽은 것처럼 잘못 잡혀도 셌는데,
+        // 이때 엉덩이 높이는 거의 그대로라 이 조건으로 걸러짐
+        if (!isLunge) {
+            const hipY = smooth('hipY', legs.reduce((sum, leg) => sum + P[leg.S.hip].y, 0) / legs.length);
+            // 완전히 서 있을 때만 엉덩이 높이를 기억 (isUp으로 하면 내려가기 시작한 뒤에도 기준이 따라 내려가서 덜 내려간 걸로 계산됨)
+            if (ratio > STAND_RATIO || smoothed.hipStand === undefined) smooth('hipStand', hipY, 0.3);
+            const hipDrop = (hipY - smoothed.hipStand) / bodyScale(P, legs[0].S);
+            isDown = isDown && hipDrop > SQUAT_HIP_DROP;
+        }
         // '앉음'은 DOWN_HOLD_MS 넘게 계속돼야 인정 (한두 프레임 튀는 값 무시)
         const now = performance.now();
         if (!isDown) downSince = 0;
