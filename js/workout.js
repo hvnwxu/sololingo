@@ -282,7 +282,8 @@ function showFormReport(report, name) {
         .sort((a, b) => total.issues[b] - total.issues[a])[0];
     if (worst) notes.push(`💡 다음에는 "${texts[worst].speeches[0]}"에 집중해 보세요.`);
     Object.entries(texts).forEach(([key, issue]) => {
-        if (issue.unchecked && !total.checked[key]) notes.push(`ℹ️ ${issue.unchecked}`);
+        const note = `ℹ️ ${issue.unchecked}`;
+        if (issue.unchecked && !total.checked[key] && !notes.includes(note)) notes.push(note);
     });
     document.getElementById('fr-note').textContent = notes.join(' ');
 

@@ -16,7 +16,7 @@ function resetRecognitionState() {
     motionState = 'UP';
 }
 
-// ===== 자세 판정 (스쿼트·런지) =====
+// ===== 자세 판정 (스쿼트·런지·푸쉬업) =====
 // 1회 동작 동안 값을 기록했다가 → 1회가 끝나면(횟수를 셀 때) 규칙으로 판정
 let formRep = null;     // 지금 하고 있는 1회의 기록 (서 있을 때부터 다시 일어설 때까지)
 let formSets = [];      // 세트별 판정 결과 (마지막 칸이 지금 세트, 자세 판정이 없는 운동이면 빈 목록)
@@ -43,25 +43,58 @@ function resetFormStats(all) {
     if (FORM_RULES[type]) formSets.push(newFormStats(type));
 }
 
-// 매 프레임: 1회 동안 가장 깊이 굽힌 값, 가장 많이 숙인 값, 무릎이 가장 많이 모인 값을 기억
-function recordFormFrame(P, J, vis, ratio, kneeAngle, kneeIn) {
-    if (!formRep) {
-        formRep = { minRatio: Infinity, minKnee: Infinity, kneeFrames: 0, maxLean: -Infinity, leanFrames: 0, maxKneeIn: -Infinity, kneeInFrames: 0 };
+// 매 프레임: 1회 동안 값마다 가장 작은 값(mode 'min') 또는 가장 큰 값('max')과 잰 프레임 수를 기억
+// 예: 무릎 각도는 가장 작은 값(가장 깊이 굽힌 순간), 상체 기울기는 가장 큰 값(가장 많이 숙인 순간)
+// value가 null이면(관절이 안 보이는 등) 기록하지 않음
+function trackForm(key, value, mode) {
+    if (!formRep) formRep = {};
+    if (value === null || value === undefined) return;
+    const track = formRep[key] || (formRep[key] = { value, frames: 0 });
+    track.value = mode === 'min' ? Math.min(track.value, value) : Math.max(track.value, value);
+    track.frames++;
+}
+
+// 1회 동안 FORM_MIN_FRAMES 이상 잰 값만 믿음 (아니면 null = 판정 못 함)
+function formValue(rep, key) {
+    const track = rep[key];
+    return track && track.frames >= FORM_MIN_FRAMES ? track.value : null;
+}
+
+// 운동별 규칙: 지적마다 true = 지적, false = 괜찮음, null = 판정 못 함 (관절이 충분히 안 보였거나 방향이 안 맞음)
+function formResults(type, rep, rules) {
+    const v = key => formValue(rep, key);
+    const over = (value, limit) => (value === null ? null : value > limit);
+    if (type === 'pushup') {
+        return {
+            sag: over(v('sag'), rules.lineMax),
+            pike: over(v('pike'), rules.lineMax),
+            shallow: over(v('elbow'), rules.depthElbow)
+        };
     }
-    formRep.minRatio = Math.min(formRep.minRatio, ratio);
-    if (kneeAngle !== null) {
-        formRep.minKnee = Math.min(formRep.minKnee, kneeAngle);
-        formRep.kneeFrames++;
-    }
-    const lean = torsoLean(P, J, vis);
-    if (lean !== null) {
-        formRep.maxLean = Math.max(formRep.maxLean, lean);
-        formRep.leanFrames++;
-    }
-    if (kneeIn !== null) {
-        formRep.maxKneeIn = Math.max(formRep.maxKneeIn, kneeIn);
-        formRep.kneeInFrames++;
-    }
+    // 스쿼트·런지: 무릎 각도(발목이 보일 때)나 허벅지 비율 중 하나라도 충분히 깊으면 OK
+    const knee = v('knee');
+    const ratio = v('ratio');
+    return {
+        lean: over(v('lean'), rules.leanMax),
+        kneeIn: over(v('kneeIn'), rules.kneeInMax),
+        shallow: knee === null && ratio === null ? null
+            : !(knee !== null && knee < rules.depthKnee) && !(ratio !== null && ratio < rules.depthRatio)
+    };
+}
+
+// 몸이 일직선에서 벗어난 각도 (+ = 엉덩이가 바닥 쪽으로 처짐, - = 위로 들림, 판단 못 하면 null)
+// 어깨-엉덩이-무릎(없으면 발목) 각도가 180°에서 얼마나 벗어났는지
+// 바닥 쪽은 손목이 있는 쪽으로 판단 → 폰을 어느 방향으로 눕혀도 동작 (화면의 위아래를 믿지 않음)
+function bodyLineBend(P, J, vis) {
+    const lower = vis(J.knee) ? J.knee : (vis(J.ankle) ? J.ankle : null);
+    if (!vis(J.shoulder) || !vis(J.hip) || !vis(J.wrist) || lower === null) return null;
+    const s = P[J.shoulder], h = P[J.hip], l = P[lower], w = P[J.wrist];
+    // 어깨→무릎 선을 기준으로 점이 어느 쪽에 있는지 (+1 / -1)
+    const side = p => Math.sign((l.x - s.x) * (p.y - s.y) - (l.y - s.y) * (p.x - s.x));
+    const floor = side(w);
+    if (!floor) return null;
+    const bend = 180 - calculateAngle(s, h, l);
+    return smooth('lineBend', side(h) === floor ? bend : -bend);
 }
 
 // 정면인지: 양쪽 어깨 사이가 몸통 길이에 비해 넓으면 정면, 좁으면 옆모습
@@ -99,15 +132,7 @@ function judgeFormRep() {
     formRep = null;
     const stats = formSets[formSets.length - 1];
     if (!rep || !stats) return [];
-    const rules = FORM_RULES[stats.type];
-
-    // 규칙마다: true = 지적, false = 괜찮음, null = 판정 못 함 (관절이 충분히 안 보였거나 방향이 안 맞음)
-    const results = {
-        lean: rep.leanFrames >= FORM_MIN_FRAMES ? rep.maxLean > rules.leanMax : null,
-        kneeIn: rep.kneeInFrames >= FORM_MIN_FRAMES ? rep.maxKneeIn > rules.kneeInMax : null,
-        // 무릎 각도(발목이 보일 때)나 허벅지 비율 중 하나라도 충분히 깊으면 OK
-        shallow: !(rep.kneeFrames >= FORM_MIN_FRAMES && rep.minKnee < rules.depthKnee) && !(rep.minRatio < rules.depthRatio)
-    };
+    const results = formResults(stats.type, rep, FORM_RULES[stats.type]);
     const issues = Object.keys(FORM_ISSUES[stats.type]).filter(key => {
         if (results[key] === null) return false;
         stats.checked[key]++;
@@ -473,7 +498,10 @@ function onPoseResults(results) {
         // 런지: 앞다리(더 굽힌 다리)를 굽힌 동안 무릎이 안쪽으로 모이는지
         const frontLeg = isLunge ? legs.reduce((a, b) => (a.ratio <= b.ratio ? a : b)) : null;
         const kneeIn = frontLeg && bent ? kneeInward(P, frontLeg.S, J, vis) : null;
-        recordFormFrame(P, J, vis, ratio, kneeAngle, kneeIn);
+        trackForm('ratio', ratio, 'min');
+        trackForm('knee', kneeAngle, 'min');
+        trackForm('lean', torsoLean(P, J, vis), 'max');
+        trackForm('kneeIn', kneeIn, 'max');
 
         if (downHeld && motionState === 'UP') {
             motionState = 'DOWN';
@@ -494,6 +522,7 @@ function onPoseResults(results) {
     } else if (currentEx.type === 'pushup') {
         if (![J.shoulder, J.elbow, J.wrist].every(vis)) {
             motionState = 'UP';
+            formRep = null; // 중간에 안 보였던 1회는 판정하지 않음
             status.textContent = '어깨·팔꿈치·손목이 보이도록 폰을 몸 옆에 두세요';
             if (coachHint('joints', '어깨, 팔꿈치, 손목이 보이게 해 주세요.')) setStageView('preview', true);
             return;
@@ -501,11 +530,20 @@ function onPoseResults(results) {
         const angle = smooth('elbow', calculateAngle(P[J.shoulder], P[J.elbow], P[J.wrist]));
 
         // 몸 일직선 확인: 엉덩이와 무릎(없으면 발목)이 보일 때만
-        const lower = vis(J.knee) ? J.knee : (vis(J.ankle) ? J.ankle : null);
-        const bodyBent = vis(J.hip) && lower !== null
-            && smooth('line', calculateAngle(P[J.shoulder], P[J.hip], P[lower])) < BODY_LINE_MIN;
-        const lineWarn = coachHint(bodyBent ? 'line' : null, '엉덩이를 펴서 몸을 일직선으로 만들어 주세요.');
+        // 크게 꺾인 채로 1.5초 넘게 있으면 바로 안내 (처짐/들림을 나눠서)
+        const bend = bodyLineBend(P, J, vis);
+        const lineKey = bend === null || Math.abs(bend) <= 180 - BODY_LINE_MIN ? null : (bend > 0 ? 'sag' : 'pike');
+        const lineWarn = coachHint(lineKey && 'line-' + lineKey,
+            lineKey === 'sag' ? '엉덩이가 처졌어요. 배에 힘을 주고 몸을 일직선으로 만들어 주세요.' : '엉덩이가 너무 올라갔어요. 몸을 일직선으로 내려 주세요.');
         setStageView('focus', lineWarn);
+
+        // 1회 기록: 팔을 다 편 동안은 새로 시작 → 가장 많이 굽힌 팔꿈치 각도, 가장 많이 처지거나 들린 정도
+        if (motionState === 'UP' && angle > 145) formRep = null;
+        trackForm('elbow', angle, 'min');
+        if (bend !== null) {
+            trackForm('sag', Math.max(0, bend), 'max');
+            trackForm('pike', Math.max(0, -bend), 'max');
+        }
 
         if (angle < 100 && motionState === 'UP') {
             motionState = 'DOWN';
