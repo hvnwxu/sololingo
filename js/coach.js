@@ -133,6 +133,25 @@ function flashRep() {
     el.classList.add('on');
 }
 
+// 스쿼트 1회 판정 결과를 횟수 아래에 잠깐 크게 표시 (✅ 좋은 자세 / ⚠️ 고칠 점)
+let formBadgeTimer = null;
+function showFormBadge(issues) {
+    const el = document.getElementById('form-badge');
+    if (!el) return;
+    el.textContent = issues.length
+        ? `⚠️ ${issues.map(key => FORM_ISSUES[key].short).join(' · ')}`
+        : '✅ 좋은 자세';
+    el.classList.toggle('bad', issues.length > 0);
+    el.classList.add('show');
+    clearTimeout(formBadgeTimer);
+    formBadgeTimer = setTimeout(hideFormBadge, FORM_BADGE_MS);
+}
+
+function hideFormBadge() {
+    clearTimeout(formBadgeTimer);
+    document.getElementById('form-badge')?.classList.remove('show');
+}
+
 // ===== 시작 카운트다운 =====
 // '시작하기'를 누른 뒤 폰에서 물러나는 동안은 세지 않고, 몸이 보이면 3, 2, 1 후에 셈
 let readySince = 0;

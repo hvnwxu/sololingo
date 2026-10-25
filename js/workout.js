@@ -46,7 +46,12 @@ function handleSetCompletion() {
     isCompletingSet = true;
     vibrate([120, 60, 120]);
     if (currentSet < totalSets) {
-        speakText('세트 완료! 휴식을 취하세요.', SPEAK.IMPORTANT);
+        // 스쿼트는 이번 세트 자세 요약을 휴식 화면에 보여 주고 말해 줌
+        const ex = exercises[selectedStepIndex];
+        const setStats = formSets[formSets.length - 1];
+        const formText = ex.type === 'squat' && setStats?.reps ? `${setStats.reps}회 중 좋은 자세 ${setStats.good}회. ` : '';
+        document.getElementById('rest-form').textContent = ex.type === 'squat' ? formSummaryText(setStats) : '';
+        speakText(`세트 완료! ${formText}휴식을 취하세요.`, SPEAK.IMPORTANT);
         startRestPhase();
     } else {
         speakText('축하합니다! 모든 세트를 마쳤습니다.', SPEAK.IMPORTANT);
@@ -89,6 +94,7 @@ function endRestPhase() {
     currentSet++;
     countReps = 0;
     resetRecognitionState();
+    resetFormStats(false);
     document.getElementById('current-set').textContent = String(currentSet);
     setRepsDisplay(0);
     document.getElementById('ai-status').textContent = `${currentSet}세트 시작!`;
@@ -109,6 +115,7 @@ function openExerciseModal(index) {
     countReps = 0;
     currentSet = 1;
     resetRecognitionState();
+    resetFormStats(true);
     isResting = false;
     isCompletingSet = false;
     startPhase = 'waiting';
@@ -187,6 +194,7 @@ function stopWorkoutResources() {
     stopPlankTimer(false);
     cancelCountdown();
     setStageView('preview');
+    hideFormBadge();
     if (restInterval) { clearInterval(restInterval); restInterval = null; }
     if (completionTimeout) { clearTimeout(completionTimeout); completionTimeout = null; }
     isResting = false;
@@ -228,7 +236,15 @@ window.addEventListener('popstate', () => {
 function finishCurrentStep(isManual = false) {
     const finishedIndex = selectedStepIndex;
     if (finishedIndex === null) return;
+    // 수동 완료는 AI가 끝까지 본 게 아니므로 자세 기록을 남기지 않음
+    const formReport = isManual ? null : takeFormReport(exercises[finishedIndex].type);
     closeWorkoutModal();
+
+    if (formReport) {
+        recordFormHistory(formReport);
+        saveProgress();
+        showFormReport(formReport, exercises[finishedIndex].name);
+    }
 
     if (finishedIndex === completedSteps) {
         completionModes[String(finishedIndex)] = isManual ? 'manual' : 'ai';
@@ -243,4 +259,34 @@ function finishCurrentStep(isManual = false) {
             setTimeout(() => { showDietModal(true); renderDietCard(); }, 500);
         }
     }
+}
+
+// 운동을 마치면 자세 리포트를 보여 줌 (예: 80% · 30회 중 좋은 자세 24회 · 세트별 결과)
+function showFormReport(report, name) {
+    const { total, sets } = report;
+    document.getElementById('fr-title').textContent = `🦉 ${name} 자세 리포트`;
+    document.getElementById('fr-percent').textContent = String(Math.round((total.good / total.reps) * 100));
+    document.getElementById('fr-summary').textContent = formSummaryText(total);
+
+    const list = document.getElementById('fr-sets');
+    list.replaceChildren();
+    sets.forEach((stats, i) => {
+        const li = document.createElement('li');
+        li.textContent = `${i + 1}세트: ${formSummaryText(stats)}`;
+        list.appendChild(li);
+    });
+
+    // 가장 많이 나온 지적 하나만 다음 운동 팁으로
+    const notes = [];
+    const worst = Object.keys(FORM_ISSUES).filter(key => total.issues[key] > 0)
+        .sort((a, b) => total.issues[b] - total.issues[a])[0];
+    if (worst) notes.push(`💡 다음에는 "${FORM_ISSUES[worst].speeches[0]}"에 집중해 보세요.`);
+    if (!total.leanChecked) notes.push('ℹ️ 정면에서 찍으면 상체 기울기는 확인하지 못해요. 옆모습으로 서면 함께 확인해요.');
+    document.getElementById('fr-note').textContent = notes.join(' ');
+
+    document.getElementById('form-report-modal').style.display = 'flex';
+}
+
+function closeFormReport() {
+    document.getElementById('form-report-modal').style.display = 'none';
 }

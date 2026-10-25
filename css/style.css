@@ -410,8 +410,20 @@ nav {
 .stage[data-mode="focus"] .big-reps small { display: block; font-size: clamp(1.8rem, 7vh, 3.2rem); margin-top: 6px; }
 .stage[data-mode="focus"] .big-set { font-size: clamp(1.6rem, 6vh, 2.6rem); text-align: center; }
 
+/* 스쿼트 1회 판정 결과 (상태 문구 아래에 잠깐 크게) */
+.form-badge {
+    position: absolute; top: 64px; left: 50%; z-index: 4; pointer-events: none;
+    transform: translateX(-50%) scale(0.9); opacity: 0; transition: opacity 0.2s, transform 0.2s;
+    max-width: calc(100% - 24px); white-space: nowrap; text-align: center;
+    padding: 10px 20px; border-radius: 18px; font-size: clamp(1.4rem, 5vh, 2.2rem); font-weight: 900;
+    background: var(--primary); color: #fff; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.form-badge.bad { background: #ff9600; }
+.form-badge.show { opacity: 1; transform: translateX(-50%) scale(1); }
+
 @media (prefers-reduced-motion: reduce) {
     .stage.warn::after { animation: none; }
+    .form-badge { transition: none; }
 }
 
 /* 2m 떨어져서도 보이는 큰 숫자 */
@@ -433,6 +445,16 @@ nav {
     color: white; text-align: center; padding: 20px;
 }
 .rest-timer-num { font-size: 6rem; font-weight: 900; margin: 10px 0; }
+.rest-form { font-size: 1.1rem; font-weight: 800; line-height: 1.4; margin-bottom: 8px; max-width: 22em; }
+.rest-form:empty { display: none; }
+
+/* 자세 리포트 */
+.fr-score { font-size: 3.6rem; font-weight: 900; color: var(--primary-ink); text-align: center; line-height: 1.1; margin: 10px 0 4px; }
+.fr-score small { display: block; font-size: 0.85rem; font-weight: 700; color: var(--text-muted); }
+.fr-summary { text-align: center; font-weight: 700; margin-bottom: 10px; }
+.fr-sets { list-style: none; padding: 10px 12px; margin-bottom: 10px; border-radius: 12px; background: var(--surface-2); font-size: 0.9rem; line-height: 1.7; color: var(--text-muted); }
+.fr-note { font-size: 0.85rem; line-height: 1.5; color: var(--text-muted); margin-bottom: 4px; }
+.fr-note:empty { display: none; }
 .skip-btn {
     background: white; color: var(--secondary); border: none;
     padding: 14px 24px; border-radius: 14px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 10px;

@@ -9,7 +9,11 @@ function copyAssessmentReport() {
     const aiCount = Object.values(completionModes).filter(mode => mode === 'ai').length;
     const manualCount = Object.values(completionModes).filter(mode => mode === 'manual').length;
     const unknownCount = Math.max(0, completedSteps - aiCount - manualCount);
-    const reportText = `[ SOLOLINGO 운동 기록 ]\n- 일자: ${today}\n- 운동 목표: ${goal} (${level})\n- 레벨: Lv.${currentLevel}\n- 완료한 운동: ${completedSteps}/${exercises.length} 단계\n- AI 인식 완료: ${aiCount}단계\n- 수동 완료: ${manualCount}단계\n- 완료 방식 미기록(이전 저장 데이터): ${unknownCount}단계\n- 연속 운동 일수: ${calculateStreakDays()}일\n- 현재 XP: ${currentXP} XP\n---------------------------------------\n※ 이 기록은 이 기기에 저장된 앱 진행 상황을 요약한 것으로, 외부 인증을 거친 기록은 아닙니다.`;
+    const lastSquat = formHistory.filter(record => record.type === 'squat').pop();
+    const formLine = lastSquat
+        ? `\n- 최근 스쿼트 자세: 좋은 자세 ${Math.round((lastSquat.good / Math.max(1, lastSquat.reps)) * 100)}% (${lastSquat.reps}회 중 ${lastSquat.good}회, ${lastSquat.date})`
+        : '';
+    const reportText = `[ SOLOLINGO 운동 기록 ]\n- 일자: ${today}\n- 운동 목표: ${goal} (${level})\n- 레벨: Lv.${currentLevel}\n- 완료한 운동: ${completedSteps}/${exercises.length} 단계\n- AI 인식 완료: ${aiCount}단계\n- 수동 완료: ${manualCount}단계\n- 완료 방식 미기록(이전 저장 데이터): ${unknownCount}단계${formLine}\n- 연속 운동 일수: ${calculateStreakDays()}일\n- 현재 XP: ${currentXP} XP\n---------------------------------------\n※ 이 기록은 이 기기에 저장된 앱 진행 상황을 요약한 것으로, 외부 인증을 거친 기록은 아닙니다.`;
 
     // 안드로이드에서는 공유 창(카톡 등)으로 바로 보낼 수 있게 함
     if (navigator.share) {

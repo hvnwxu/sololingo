@@ -8,6 +8,7 @@ let streakDays = 0;
 let completedQuests = [];
 let activityDates = [];
 let completionModes = {};
+let formHistory = [];        // 자세 판정 기록 (운동 1번 = 1칸, 나중에 '기록 분석 → 다음 운동 추천'에 쓸 데이터)
 let questDate = getLocalDateKey();
 
 // 카메라 & AI
