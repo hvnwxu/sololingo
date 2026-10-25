@@ -8,7 +8,135 @@ function resetRecognitionState() {
     smoothed = {};
     plankLastGood = 0;
     shallowDip = false;
+    formRep = null;
     motionState = 'UP';
+}
+
+// ===== 스쿼트 자세 판정 =====
+// 1회 동작 동안 값을 기록했다가 → 1회가 끝나면(횟수를 셀 때) 규칙으로 판정
+let formRep = null;     // 지금 하고 있는 1회의 기록 (서 있을 때부터 다시 일어설 때까지)
+let formSets = [];      // 세트별 판정 결과 (마지막 칸이 지금 세트)
+let formSpokenAt = {};  // 지적별로 마지막으로 말한 회차 (같은 말을 매번 하지 않게)
+let formLineIndex = {}; // 지적별로 다음에 말할 문장 번호 (문장을 돌아가며 말함)
+let formLastSpoken = null; // 바로 전 회에 말로 지적한 것 (다음 회에 고치면 칭찬)
+
+function newFormStats() {
+    return { reps: 0, good: 0, leanChecked: 0, issues: { lean: 0, shallow: 0 } };
+}
+
+// 운동 창을 열 때 전체 초기화, 새 세트를 시작할 때는 세트 칸만 하나 추가
+function resetFormStats(all) {
+    if (all) {
+        formSets = [];
+        formSpokenAt = {};
+        formLineIndex = {};
+    }
+    formLastSpoken = null;
+    formSets.push(newFormStats());
+    formRep = null;
+}
+
+// 매 프레임: 1회 동안 가장 깊이 앉은 값과 가장 많이 숙인 값을 기억
+function recordFormFrame(P, J, vis, ratio, kneeAngle) {
+    if (!formRep) formRep = { minRatio: Infinity, minKnee: Infinity, kneeFrames: 0, maxLean: -Infinity, leanFrames: 0 };
+    formRep.minRatio = Math.min(formRep.minRatio, ratio);
+    if (kneeAngle !== null) {
+        formRep.minKnee = Math.min(formRep.minKnee, kneeAngle);
+        formRep.kneeFrames++;
+    }
+    const lean = torsoLean(P, J, vis);
+    if (lean !== null) {
+        formRep.maxLean = Math.max(formRep.maxLean, lean);
+        formRep.leanFrames++;
+    }
+}
+
+// 상체(엉덩이→어깨)가 수직에서 기운 각도. 옆모습이 아니면 null
+// 정면에서는 앞으로 숙여도 화면에서는 상체가 짧아 보일 뿐 기울어 보이지 않아서 판정할 수 없음
+// → 양쪽 어깨 사이가 몸통 길이에 비해 좁으면(옆모습) 판정
+function torsoLean(P, J, vis) {
+    if (!vis(J.shoulder) || !vis(J.hip)) return null;
+    const dx = P[J.shoulder].x - P[J.hip].x;
+    const dy = P[J.shoulder].y - P[J.hip].y;
+    const torso = Math.hypot(dx, dy);
+    if (torso <= 0) return null;
+    // 반대쪽 어깨는 몸에 가려져도 MediaPipe가 위치를 추정해 주므로 visibility는 보지 않음
+    const shoulderWidth = Math.abs(P[11].x - P[12].x);
+    if (shoulderWidth / torso >= SIDE_VIEW_MAX) return null;
+    return smooth('lean', Math.atan2(Math.abs(dx), -dy) * 180 / Math.PI); // 0° = 똑바로 섬
+}
+
+// 1회가 끝났을 때 규칙으로 판정 → 지적할 것 목록 (빈 목록 = 좋은 자세)
+function judgeFormRep() {
+    const rep = formRep;
+    formRep = null;
+    const stats = formSets[formSets.length - 1];
+    if (!rep || !stats) return [];
+
+    const issues = [];
+    const leanChecked = rep.leanFrames >= FORM_MIN_FRAMES;
+    if (leanChecked && rep.maxLean > SQUAT_LEAN_MAX) issues.push('lean');
+    // 무릎 각도(발목이 보일 때)나 허벅지 비율 중 하나라도 충분히 깊으면 OK
+    const deepByKnee = rep.kneeFrames >= FORM_MIN_FRAMES && rep.minKnee < SQUAT_DEPTH_KNEE;
+    const deepByRatio = rep.minRatio < SQUAT_DEPTH_RATIO;
+    if (!deepByKnee && !deepByRatio) issues.push('shallow');
+
+    stats.reps++;
+    if (leanChecked) stats.leanChecked++;
+    if (!issues.length) stats.good++;
+    issues.forEach(key => { stats.issues[key]++; });
+    return issues;
+}
+
+// 화면에는 매번 보여 주고, 말할 문장이 있으면 돌려줌
+// - 같은 지적은 FORM_SPEAK_EVERY회에 한 번만, 문장은 돌아가며 바꿔 말함
+// - 바로 전 회에 지적한 걸 이번에 고쳤으면 칭찬
+function formFeedback(issues) {
+    showFormBadge(issues);
+    if (!voiceAllows(SPEAK.COACH)) return '';
+    const fixed = formLastSpoken && !issues.includes(formLastSpoken);
+    formLastSpoken = null;
+    if (fixed && !issues.length) return pickFormLine('praise', FORM_PRAISE);
+
+    const repNo = sumFormStats(formSets).reps;
+    const key = issues.find(k => repNo - (formSpokenAt[k] ?? -Infinity) >= FORM_SPEAK_EVERY);
+    if (!key) return '';
+    formSpokenAt[key] = repNo;
+    formLastSpoken = key;
+    return pickFormLine(key, FORM_ISSUES[key].speeches);
+}
+
+function pickFormLine(key, lines) {
+    const index = formLineIndex[key] || 0;
+    formLineIndex[key] = (index + 1) % lines.length;
+    return lines[index];
+}
+
+function sumFormStats(list) {
+    return list.reduce((total, stats) => {
+        total.reps += stats.reps;
+        total.good += stats.good;
+        total.leanChecked += stats.leanChecked;
+        Object.keys(total.issues).forEach(key => { total.issues[key] += stats.issues[key]; });
+        return total;
+    }, newFormStats());
+}
+
+// 예: "10회 중 좋은 자세 7회 · 깊이 부족 2회 · 상체 숙임 1회"
+function formSummaryText(stats) {
+    if (!stats || !stats.reps) return '';
+    const parts = [`${stats.reps}회 중 좋은 자세 ${stats.good}회`];
+    Object.keys(FORM_ISSUES).forEach(key => {
+        if (stats.issues[key]) parts.push(`${FORM_ISSUES[key].label} ${stats.issues[key]}회`);
+    });
+    return parts.join(' · ');
+}
+
+// 운동을 마칠 때 기록용으로 정리 (판정한 횟수가 없으면 null)
+function takeFormReport(type) {
+    const sets = formSets.filter(stats => stats.reps > 0);
+    if (type !== 'squat' || !sets.length) return null;
+    return { type, sets, total: sumFormStats(sets) };
 }
 
 // 한쪽 다리가 얼마나 굽었는지: { ratio: 허벅지 세로 길이 비율(서 있을 때 1, 앉을수록 작아짐), kneeAngle(발목이 안 보이면 null) }
@@ -21,7 +149,11 @@ function legBend(P, S, vis, tag) {
     const torso = vis(S.shoulder) ? Math.hypot(P[S.shoulder].x - P[S.hip].x, P[S.shoulder].y - P[S.hip].y) : 0;
     let ratio;
     if (torso > 0) {
-        const thighNorm = thigh / torso;
+        // 정면에서 상체를 숙이면 몸통이 화면에서 짧아 보여서 비율이 커짐(덜 앉은 것처럼 보임)
+        // → 지금 몸통 길이 대신 '서 있을 때 몸통 길이'(가장 길었던 값, 천천히 갱신)로 나눔
+        const torsoRef = Math.max(torso, (smoothed['torsoRef' + tag] || 0) * 0.999);
+        smoothed['torsoRef' + tag] = torsoRef;
+        const thighNorm = thigh / torsoRef;
         const ref = Math.max(thighNorm, (smoothed['ref' + tag] || 0) * 0.998); // 서 있을 때 값을 기억 (천천히 갱신)
         smoothed['ref' + tag] = ref;
         ratio = smooth('thigh' + tag, ref > 0 ? thighNorm / ref : 1);
@@ -196,6 +328,7 @@ function onPoseResults(results) {
         // 엉덩이와 무릎만 보이면 인식 가능 (발목은 있으면 더 정확)
         if (!legs.length) {
             motionState = 'UP';
+            formRep = null; // 중간에 안 보였던 1회는 판정하지 않음
             status.textContent = '엉덩이와 무릎이 화면에 보이게 해주세요';
             if (coachHint('joints', '엉덩이와 무릎이 화면에 보이게 해 주세요.')) setStageView('preview', true);
             return;
@@ -211,13 +344,19 @@ function onPoseResults(results) {
         let isUp;
         let bent; // 눈에 띄게 굽히긴 했는지 (덜 앉음 판정용)
         if (kneeAngle !== null) {
-            isDown = kneeAngle < (isLunge ? LUNGE_DOWN_KNEE : 115) || ratio < (isLunge ? LUNGE_DOWN_RATIO : 0.5);
+            isDown = kneeAngle < (isLunge ? LUNGE_DOWN_KNEE : SQUAT_DOWN_KNEE) || ratio < (isLunge ? LUNGE_DOWN_RATIO : SQUAT_DOWN_RATIO);
             isUp = kneeAngle > 150 && ratio > 0.75;
             bent = kneeAngle < (isLunge ? LUNGE_SHALLOW_KNEE : SHALLOW_KNEE) || ratio < (isLunge ? LUNGE_SHALLOW_RATIO : SHALLOW_RATIO);
         } else {
-            isDown = ratio < (isLunge ? LUNGE_DOWN_RATIO + 0.05 : 0.55);
+            isDown = ratio < (isLunge ? LUNGE_DOWN_RATIO : SQUAT_DOWN_RATIO) + 0.05;
             isUp = ratio > 0.8;
             bent = ratio < (isLunge ? LUNGE_SHALLOW_RATIO : SHALLOW_RATIO);
+        }
+
+        if (!isLunge) {
+            // 다 일어선 동안은 기록을 새로 시작 → 기록 = 마지막으로 서 있던 때부터 1회가 끝날 때까지
+            if (motionState === 'UP' && isUp) formRep = null;
+            recordFormFrame(P, J, vis, ratio, kneeAngle);
         }
 
         if (isDown && motionState === 'UP') {
@@ -353,6 +492,11 @@ function incrementRep(targetReps) {
     let say = `${countReps}`;
     if (left === 1) say += ', 마지막 하나!';
     else if (left === 5 && targetReps >= 10) say += ', 다섯 개 남았어요';
+    // 자세 지적은 횟수 뒤에 이어서 말함 (따로 말하면 횟수 음성에 묻혀서 건너뛰어짐)
+    if (exercises[selectedStepIndex].type === 'squat') {
+        const tip = formFeedback(judgeFormRep());
+        if (tip) say += `, ${tip}`;
+    }
     speakText(say);
     vibrate(60);
 

@@ -160,6 +160,7 @@
                 <div class="big-reps"><span id="current-reps">0</span><small> / <span id="modal-reps">15</span><span id="unit-label">회</span></small></div>
                 <div class="big-set"><span id="current-set">1</span> / <span id="modal-sets">3</span>세트</div>
             </div>
+            <div class="form-badge" id="form-badge" aria-live="polite"></div>
 
             <div class="place-guide" id="place-guide">
                 <div class="pg-card">
@@ -174,6 +175,7 @@
             <div class="rest-overlay" id="rest-overlay">
                 <h3>☕ 휴식 시간</h3>
                 <div class="rest-timer-num" id="rest-countdown">30</div>
+                <p class="rest-form" id="rest-form"></p>
                 <p>다음 세트를 준비하세요!</p>
                 <button class="skip-btn" onclick="skipRest()">휴식 건너뛰기 ⏩</button>
             </div>
@@ -204,6 +206,18 @@
         <h3>🥗 추천 식단 가이드</h3>
         <div id="diet-info"></div>
         <button class="action-btn" onclick="closeDietModal()">확인 및 완료</button>
+    </div>
+</div>
+
+<!-- 스쿼트 자세 리포트 (운동을 마치면 표시) -->
+<div class="modal" id="form-report-modal">
+    <div class="modal-content">
+        <h2 id="fr-title">🦉 자세 리포트</h2>
+        <div class="fr-score"><span id="fr-percent">0</span>%<small>좋은 자세 비율</small></div>
+        <p class="fr-summary" id="fr-summary"></p>
+        <ul class="fr-sets" id="fr-sets"></ul>
+        <p class="fr-note" id="fr-note"></p>
+        <button class="action-btn" type="button" onclick="closeFormReport()">확인</button>
     </div>
 </div>
 

@@ -50,6 +50,29 @@ function recordWorkoutActivity() {
     streakDays = calculateStreakDays();
 }
 
+// 자세 판정 기록: { date, type, reps, good, lean, shallow } (최근 FORM_HISTORY_MAX개만 보관)
+const FORM_HISTORY_MAX = 100;
+
+function recordFormHistory(report) {
+    const { total } = report;
+    formHistory.push({
+        date: getLocalDateKey(),
+        type: report.type,
+        reps: total.reps,
+        good: total.good,
+        lean: total.issues.lean,
+        shallow: total.issues.shallow
+    });
+    formHistory = formHistory.slice(-FORM_HISTORY_MAX);
+}
+
+function isValidFormRecord(record) {
+    if (!record || typeof record !== 'object' || !isValidDateKey(record.date)) return false;
+    if (!exercises.some(ex => ex.type === record.type)) return false;
+    const counts = [record.reps, record.good, record.lean, record.shallow];
+    return counts.every(n => Number.isInteger(n) && n >= 0 && n <= 10000) && record.good <= record.reps;
+}
+
 // 저장 데이터는 사용자가 개발자 도구로 바꾸거나 손상시킬 수 있으므로 검증합니다.
 function saveProgress() {
     const data = {
@@ -61,7 +84,8 @@ function saveProgress() {
         completedQuests,
         questDate,
         activityDates,
-        completionModes
+        completionModes,
+        formHistory
     };
     try {
         localStorage.setItem('sololingo_save_data', JSON.stringify(data));
@@ -98,6 +122,8 @@ function loadProgress() {
             }
         }
 
+        formHistory = Array.isArray(data.formHistory) ? data.formHistory.filter(isValidFormRecord).slice(-FORM_HISTORY_MAX) : [];
+
         const validBadgeIds = new Set(badges.map(b => b.id));
         const savedBadges = Array.isArray(data.unlockedBadges) ? data.unlockedBadges : [];
         badges.forEach(b => { b.unlocked = savedBadges.includes(b.id) && validBadgeIds.has(b.id); });
@@ -118,6 +144,7 @@ function loadProgress() {
         completedQuests = [];
         activityDates = [];
         completionModes = {};
+        formHistory = [];
         streakDays = 0;
         badges.forEach(b => { b.unlocked = false; });
         questDate = getLocalDateKey();
