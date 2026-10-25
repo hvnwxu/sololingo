@@ -50,7 +50,7 @@ function recordWorkoutActivity() {
     streakDays = calculateStreakDays();
 }
 
-// 자세 판정 기록: { date, type, reps, good, lean, shallow } (최근 FORM_HISTORY_MAX개만 보관)
+// 자세 판정 기록: { date, type, reps, good, issues: { 지적 이름: 횟수 } } (최근 FORM_HISTORY_MAX개만 보관)
 const FORM_HISTORY_MAX = 100;
 
 function recordFormHistory(report) {
@@ -60,17 +60,25 @@ function recordFormHistory(report) {
         type: report.type,
         reps: total.reps,
         good: total.good,
-        lean: total.issues.lean,
-        shallow: total.issues.shallow
+        issues: { ...total.issues }
     });
     formHistory = formHistory.slice(-FORM_HISTORY_MAX);
 }
 
-function isValidFormRecord(record) {
-    if (!record || typeof record !== 'object' || !isValidDateKey(record.date)) return false;
-    if (!exercises.some(ex => ex.type === record.type)) return false;
-    const counts = [record.reps, record.good, record.lean, record.shallow];
-    return counts.every(n => Number.isInteger(n) && n >= 0 && n <= 10000) && record.good <= record.reps;
+// 저장된 기록을 검사해서 올바른 형식으로 돌려줌 (잘못됐으면 null)
+// 처음 배포한 버전은 스쿼트 기록을 { lean, shallow }로 저장했으므로 새 형식으로 바꿔 줌
+function normalizeFormRecord(record) {
+    if (!record || typeof record !== 'object' || !isValidDateKey(record.date) || !FORM_ISSUES[record.type]) return null;
+    const source = record.issues && typeof record.issues === 'object' ? record.issues : record;
+    const isCount = n => Number.isInteger(n) && n >= 0 && n <= 10000;
+    const issues = {};
+    for (const key of Object.keys(FORM_ISSUES[record.type])) {
+        const n = source[key] ?? 0;
+        if (!isCount(n)) return null;
+        issues[key] = n;
+    }
+    if (!isCount(record.reps) || !isCount(record.good) || record.good > record.reps) return null;
+    return { date: record.date, type: record.type, reps: record.reps, good: record.good, issues };
 }
 
 // 저장 데이터는 사용자가 개발자 도구로 바꾸거나 손상시킬 수 있으므로 검증합니다.
@@ -122,7 +130,9 @@ function loadProgress() {
             }
         }
 
-        formHistory = Array.isArray(data.formHistory) ? data.formHistory.filter(isValidFormRecord).slice(-FORM_HISTORY_MAX) : [];
+        formHistory = Array.isArray(data.formHistory)
+            ? data.formHistory.map(normalizeFormRecord).filter(Boolean).slice(-FORM_HISTORY_MAX)
+            : [];
 
         const validBadgeIds = new Set(badges.map(b => b.id));
         const savedBadges = Array.isArray(data.unlockedBadges) ? data.unlockedBadges : [];

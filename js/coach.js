@@ -133,15 +133,14 @@ function flashRep() {
     el.classList.add('on');
 }
 
-// 스쿼트 1회 판정 결과를 횟수 아래에 잠깐 크게 표시 (✅ 좋은 자세 / ⚠️ 고칠 점)
+// 1회 판정 결과를 상태 문구 아래에 잠깐 크게 표시 (✅ 좋은 자세 / ⚠️ 고칠 점)
+// tips: 고칠 점의 짧은 문구 목록 (빈 목록 = 좋은 자세)
 let formBadgeTimer = null;
-function showFormBadge(issues) {
+function showFormBadge(tips) {
     const el = document.getElementById('form-badge');
     if (!el) return;
-    el.textContent = issues.length
-        ? `⚠️ ${issues.map(key => FORM_ISSUES[key].short).join(' · ')}`
-        : '✅ 좋은 자세';
-    el.classList.toggle('bad', issues.length > 0);
+    el.textContent = tips.length ? `⚠️ ${tips.join(' · ')}` : '✅ 좋은 자세';
+    el.classList.toggle('bad', tips.length > 0);
     el.classList.add('show');
     clearTimeout(formBadgeTimer);
     formBadgeTimer = setTimeout(hideFormBadge, FORM_BADGE_MS);
