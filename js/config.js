@@ -25,10 +25,10 @@ const SQUAT_DOWN_KNEE = 130;  // 스쿼트: 무릎 각도가 이보다 작으면
 const SQUAT_DOWN_RATIO = 0.65; // 스쿼트: 허벅지 비율이 이보다 작으면 '앉음' (0.5 → 0.65, 발목이 안 보이면 +0.05)
 const SHALLOW_RATIO = 0.75;   // 스쿼트: 허벅지 비율이 이만큼 줄었는데 '앉음'까지 못 가면 "더 깊이"
 const SHALLOW_KNEE = 145;     // 스쿼트: 무릎 각도 기준 (발목이 보일 때)
-const LUNGE_DOWN_RATIO = 0.6;     // 런지: 앞다리 허벅지 비율이 이보다 작으면 '내려감'
-const LUNGE_DOWN_KNEE = 125;      // 런지: 앞다리 무릎 각도가 이보다 작으면 '내려감'
-const LUNGE_SHALLOW_RATIO = 0.72; // 런지: "더 깊이" 안내 기준
-const LUNGE_SHALLOW_KNEE = 140;
+const LUNGE_DOWN_RATIO = 0.68;    // 런지: 앞다리 허벅지 비율이 이보다 작으면 '내려감' (0.6 → 0.68: 허벅지 기울기 53° → 47°)
+const LUNGE_DOWN_KNEE = 132;      // 런지: 앞다리 무릎 각도가 이보다 작으면 '내려감' (125° → 132°)
+const LUNGE_SHALLOW_RATIO = 0.77; // 런지: "더 깊이" 안내 기준 (내려감 기준보다 위에 있어야 해서 같이 올림)
+const LUNGE_SHALLOW_KNEE = 145;
 const SHALLOW_ELBOW = 125;    // 푸쉬업: 팔꿈치가 이만큼 굽었는데 100°까지 못 가면 "더 깊이"
 const BODY_LINE_MIN = 145;    // 푸쉬업·플랭크: 어깨-엉덩이-무릎 각도가 이보다 작으면 몸이 꺾인 것
 
@@ -47,7 +47,7 @@ const TOO_CLOSE_SCALE = 0.6;  // 몸 크기 ÷ 화면 짧은 쪽 길이가 이�
 // kneeInMax: 앞 무릎이 엉덩이-발목 선에서 안쪽으로 벗어난 거리 ÷ 엉덩이 너비가 이보다 크면 "무릎 모임" (정면일 때만)
 const FORM_RULES = {
     squat: { depthKnee: 110, depthRatio: 0.5, leanMax: 50 },  // 횟수는 130° / 0.65부터 셈
-    lunge: { depthKnee: 105, depthRatio: 0.45, leanMax: 30, kneeInMax: 0.5 } // 횟수는 125° / 0.6부터 셈
+    lunge: { depthKnee: 105, depthRatio: 0.45, leanMax: 30, kneeInMax: 0.5 } // 횟수는 132° / 0.68부터 셈
 };
 const SIDE_VIEW_MAX = 0.35;    // 어깨 너비 ÷ 몸통 길이가 이보다 작으면 옆모습, 크거나 같으면 정면
 const FORM_MIN_FRAMES = 3;     // 1회 동안 관절이 이 프레임 수 이상 보였을 때만 판정 (확실하지 않으면 지적 안 함)
