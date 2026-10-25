@@ -189,20 +189,57 @@ function bodyScale(P, S) {
 
 // 한쪽 다리가 얼마나 굽었는지: { ratio: 허벅지 세로 길이 비율(서 있을 때 1, 앉을수록 작아짐), kneeAngle(발목이 안 보이면 null) }
 // 허벅지의 세로 길이는 서 있으면 길고 앉으면 짧아짐 (정면·측면 모두 동작)
-// 몸 크기로 나눠서 카메라에서 멀어지거나 가까워져도 값이 변하지 않게 함
-// → 몸 크기를 잴 어깨가 안 보이면 null (예전에는 허벅지 길이만 봤는데, 카메라에 다가갔다 물러나면 앉은 걸로 잘못 셌음)
+// - 3D 좌표(world)가 있으면: 허벅지 세로 길이 ÷ 허벅지 실제 길이 (= 허벅지가 얼마나 서 있는지)
+//   화면 좌표로 재면 정면에서 앉을 때 무릎이 카메라 쪽으로 나오면서 원근 때문에 허벅지가 길어 보여서,
+//   폰에 가까울수록(1.5m 이내) 70°까지 앉아도 안 셌음. 3D 좌표는 미터 단위라 거리·원근·상체 숙임과 무관
+// - 3D 좌표가 없으면: 화면에서 잰 허벅지 세로 길이 ÷ 몸 크기
+// 어깨가 안 보이면 null (너무 가까운지 판단할 수 없고, 예전에 카메라에 다가갔다 물러나면 앉은 걸로 잘못 셌음)
 // tag: 다리마다 기준값·평균값을 따로 기억하기 위한 이름 ('L' / 'R')
-function legBend(P, S, vis, tag) {
+// front: 정면이면 무릎 각도도 3D로 잼 (정면에서는 화면상 무릎 각도가 앉아도 거의 안 줄어듦)
+function legBend(P, S, vis, tag, world, front) {
     if (!vis(S.hip) || !vis(S.knee) || !vis(S.shoulder)) return null;
-    const scale = bodyScale(P, S);
-    if (scale <= 0) return null;
+    const use3d = isWorldPoint(world?.[S.hip]) && isWorldPoint(world?.[S.knee]);
+    let raw;
+    if (use3d) {
+        const hip = world[S.hip], knee = world[S.knee];
+        const length = Math.hypot(knee.x - hip.x, knee.y - hip.y, knee.z - hip.z);
+        if (length <= 0) return null;
+        raw = Math.abs(knee.y - hip.y) / length;
+    } else {
+        const scale = bodyScale(P, S);
+        if (scale <= 0) return null;
+        raw = Math.max(0, P[S.knee].y - P[S.hip].y) / scale;
+    }
     // 평균을 먼저 내고 기준(서 있을 때 값)과 비교 → 한 프레임 튀는 값이 기준값에 남지 않음
-    const thighNorm = smooth('thigh' + tag, Math.max(0, P[S.knee].y - P[S.hip].y) / scale);
-    const ref = Math.max(thighNorm, (smoothed['ref' + tag] || 0) * 0.998); // 서 있을 때 값을 기억 (천천히 갱신)
-    smoothed['ref' + tag] = ref;
+    // 3D/화면 방식은 값의 단위가 달라서 따로 기억
+    const key = (use3d ? '3d' : '') + tag;
+    const thighNorm = smooth('thigh' + key, raw);
+    const ref = Math.max(thighNorm, (smoothed['ref' + key] || 0) * 0.998); // 서 있을 때 값을 기억 (천천히 갱신)
+    smoothed['ref' + key] = ref;
     const ratio = ref > 0 ? thighNorm / ref : 1;
-    const kneeAngle = vis(S.ankle) ? smooth('knee' + tag, calculateAngle(P[S.hip], P[S.knee], P[S.ankle])) : null;
+
+    let kneeAngle = null;
+    if (vis(S.ankle)) {
+        const ankle3d = front && use3d && isWorldPoint(world[S.ankle]);
+        const angle = ankle3d
+            ? calculateAngle3D(world[S.hip], world[S.knee], world[S.ankle])
+            : calculateAngle(P[S.hip], P[S.knee], P[S.ankle]);
+        kneeAngle = smooth('knee' + (ankle3d ? '3d' : '') + tag, angle);
+    }
     return { ratio, kneeAngle };
+}
+
+function isWorldPoint(p) {
+    return !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z);
+}
+
+function calculateAngle3D(p1, p2, p3) {
+    const a = { x: p1.x - p2.x, y: p1.y - p2.y, z: p1.z - p2.z };
+    const b = { x: p3.x - p2.x, y: p3.y - p2.y, z: p3.z - p2.z };
+    const lengths = Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z);
+    if (lengths <= 0) return 180;
+    const cos = (a.x * b.x + a.y * b.y + a.z * b.z) / lengths;
+    return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
 }
 
 // 운동별로 시작(카운트다운)에 필요한 관절이 보이는지
@@ -374,11 +411,14 @@ function onPoseResults(results) {
             return;
         }
 
+        const world = results.poseWorldLandmarks; // MediaPipe가 추정한 3D 좌표 (미터, 엉덩이 가운데가 원점)
+        const front = isFrontView(P, J);
+
         // 두 다리를 다 봄
         // - 스쿼트: 덜 굽힌 다리 기준 → 두 다리를 같이 굽혀야 셈 (걷거나 발을 고쳐 디딜 때 한쪽만 굽는 건 안 셈)
         // - 런지: 더 굽힌 다리(앞다리) 기준 (뒷다리는 무릎을 바닥까지 내려도 허벅지가 세로로 길게 남아서)
         const legs = [[LEFT, 'L'], [RIGHT, 'R']]
-            .map(([S, tag]) => { const bend = legBend(P, S, vis, tag); return bend && { S, ...bend }; })
+            .map(([S, tag]) => { const bend = legBend(P, S, vis, tag, world, front); return bend && { S, ...bend }; })
             .filter(Boolean);
 
         // 어깨·엉덩이·무릎이 보여야 인식 (발목은 있으면 더 정확)
