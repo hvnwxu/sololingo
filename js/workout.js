@@ -46,11 +46,10 @@ function handleSetCompletion() {
     isCompletingSet = true;
     vibrate([120, 60, 120]);
     if (currentSet < totalSets) {
-        // 스쿼트는 이번 세트 자세 요약을 휴식 화면에 보여 주고 말해 줌
-        const ex = exercises[selectedStepIndex];
+        // 자세 판정이 있는 운동(스쿼트·런지)은 이번 세트 자세 요약을 휴식 화면에 보여 주고 말해 줌
         const setStats = formSets[formSets.length - 1];
-        const formText = ex.type === 'squat' && setStats?.reps ? `${setStats.reps}회 중 좋은 자세 ${setStats.good}회. ` : '';
-        document.getElementById('rest-form').textContent = ex.type === 'squat' ? formSummaryText(setStats) : '';
+        const formText = setStats?.reps ? `${setStats.reps}회 중 좋은 자세 ${setStats.good}회. ` : '';
+        document.getElementById('rest-form').textContent = formSummaryText(setStats);
         speakText(`세트 완료! ${formText}휴식을 취하세요.`, SPEAK.IMPORTANT);
         startRestPhase();
     } else {
@@ -276,12 +275,15 @@ function showFormReport(report, name) {
         list.appendChild(li);
     });
 
-    // 가장 많이 나온 지적 하나만 다음 운동 팁으로
+    // 가장 많이 나온 지적 하나만 다음 운동 팁으로 + 한 번도 판정 못 한 규칙 안내
+    const texts = FORM_ISSUES[report.type];
     const notes = [];
-    const worst = Object.keys(FORM_ISSUES).filter(key => total.issues[key] > 0)
+    const worst = Object.keys(texts).filter(key => total.issues[key] > 0)
         .sort((a, b) => total.issues[b] - total.issues[a])[0];
-    if (worst) notes.push(`💡 다음에는 "${FORM_ISSUES[worst].speeches[0]}"에 집중해 보세요.`);
-    if (!total.leanChecked) notes.push('ℹ️ 정면에서 찍으면 상체 기울기는 확인하지 못해요. 옆모습으로 서면 함께 확인해요.');
+    if (worst) notes.push(`💡 다음에는 "${texts[worst].speeches[0]}"에 집중해 보세요.`);
+    Object.entries(texts).forEach(([key, issue]) => {
+        if (issue.unchecked && !total.checked[key]) notes.push(`ℹ️ ${issue.unchecked}`);
+    });
     document.getElementById('fr-note').textContent = notes.join(' ');
 
     document.getElementById('form-report-modal').style.display = 'flex';

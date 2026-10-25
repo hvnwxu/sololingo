@@ -3,25 +3,31 @@
 let smoothed = {};           // 각도 흔들림을 줄이기 위한 평균값
 let plankLastGood = 0;
 let shallowDip = false;      // 내려가다 말고 다시 올라왔는지 ("조금 더 깊이" 안내용)
+let downSince = 0;           // '앉음' 상태가 시작된 시각 (DOWN_HOLD_MS 동안 계속돼야 인정)
+let lastRepAt = 0;           // 마지막으로 횟수를 센 시각 (REP_MIN_MS 안에 또 세지 않음)
 
 function resetRecognitionState() {
     smoothed = {};
     plankLastGood = 0;
     shallowDip = false;
+    downSince = 0;
+    lastRepAt = 0;
     formRep = null;
     motionState = 'UP';
 }
 
-// ===== 스쿼트 자세 판정 =====
+// ===== 자세 판정 (스쿼트·런지) =====
 // 1회 동작 동안 값을 기록했다가 → 1회가 끝나면(횟수를 셀 때) 규칙으로 판정
 let formRep = null;     // 지금 하고 있는 1회의 기록 (서 있을 때부터 다시 일어설 때까지)
-let formSets = [];      // 세트별 판정 결과 (마지막 칸이 지금 세트)
+let formSets = [];      // 세트별 판정 결과 (마지막 칸이 지금 세트, 자세 판정이 없는 운동이면 빈 목록)
 let formSpokenAt = {};  // 지적별로 마지막으로 말한 회차 (같은 말을 매번 하지 않게)
 let formLineIndex = {}; // 지적별로 다음에 말할 문장 번호 (문장을 돌아가며 말함)
 let formLastSpoken = null; // 바로 전 회에 말로 지적한 것 (다음 회에 고치면 칭찬)
 
-function newFormStats() {
-    return { reps: 0, good: 0, leanChecked: 0, issues: { lean: 0, shallow: 0 } };
+// issues: 지적별 횟수, checked: 그 규칙으로 판정할 수 있었던 횟수 (예: 정면이면 상체 기울기는 판정 못 함)
+function newFormStats(type) {
+    const zeros = () => Object.fromEntries(Object.keys(FORM_ISSUES[type]).map(key => [key, 0]));
+    return { type, reps: 0, good: 0, checked: zeros(), issues: zeros() };
 }
 
 // 운동 창을 열 때 전체 초기화, 새 세트를 시작할 때는 세트 칸만 하나 추가
@@ -32,13 +38,16 @@ function resetFormStats(all) {
         formLineIndex = {};
     }
     formLastSpoken = null;
-    formSets.push(newFormStats());
     formRep = null;
+    const type = exercises[selectedStepIndex]?.type;
+    if (FORM_RULES[type]) formSets.push(newFormStats(type));
 }
 
-// 매 프레임: 1회 동안 가장 깊이 앉은 값과 가장 많이 숙인 값을 기억
-function recordFormFrame(P, J, vis, ratio, kneeAngle) {
-    if (!formRep) formRep = { minRatio: Infinity, minKnee: Infinity, kneeFrames: 0, maxLean: -Infinity, leanFrames: 0 };
+// 매 프레임: 1회 동안 가장 깊이 굽힌 값, 가장 많이 숙인 값, 무릎이 가장 많이 모인 값을 기억
+function recordFormFrame(P, J, vis, ratio, kneeAngle, kneeIn) {
+    if (!formRep) {
+        formRep = { minRatio: Infinity, minKnee: Infinity, kneeFrames: 0, maxLean: -Infinity, leanFrames: 0, maxKneeIn: -Infinity, kneeInFrames: 0 };
+    }
     formRep.minRatio = Math.min(formRep.minRatio, ratio);
     if (kneeAngle !== null) {
         formRep.minKnee = Math.min(formRep.minKnee, kneeAngle);
@@ -49,21 +58,39 @@ function recordFormFrame(P, J, vis, ratio, kneeAngle) {
         formRep.maxLean = Math.max(formRep.maxLean, lean);
         formRep.leanFrames++;
     }
+    if (kneeIn !== null) {
+        formRep.maxKneeIn = Math.max(formRep.maxKneeIn, kneeIn);
+        formRep.kneeInFrames++;
+    }
+}
+
+// 정면인지: 양쪽 어깨 사이가 몸통 길이에 비해 넓으면 정면, 좁으면 옆모습
+// 반대쪽 어깨는 몸에 가려져도 MediaPipe가 위치를 추정해 주므로 visibility는 보지 않음
+function isFrontView(P, J) {
+    const torso = Math.hypot(P[J.shoulder].x - P[J.hip].x, P[J.shoulder].y - P[J.hip].y);
+    return torso > 0 && Math.abs(P[11].x - P[12].x) / torso >= SIDE_VIEW_MAX;
 }
 
 // 상체(엉덩이→어깨)가 수직에서 기운 각도. 옆모습이 아니면 null
 // 정면에서는 앞으로 숙여도 화면에서는 상체가 짧아 보일 뿐 기울어 보이지 않아서 판정할 수 없음
-// → 양쪽 어깨 사이가 몸통 길이에 비해 좁으면(옆모습) 판정
 function torsoLean(P, J, vis) {
-    if (!vis(J.shoulder) || !vis(J.hip)) return null;
+    if (!vis(J.shoulder) || !vis(J.hip) || isFrontView(P, J)) return null;
     const dx = P[J.shoulder].x - P[J.hip].x;
     const dy = P[J.shoulder].y - P[J.hip].y;
-    const torso = Math.hypot(dx, dy);
-    if (torso <= 0) return null;
-    // 반대쪽 어깨는 몸에 가려져도 MediaPipe가 위치를 추정해 주므로 visibility는 보지 않음
-    const shoulderWidth = Math.abs(P[11].x - P[12].x);
-    if (shoulderWidth / torso >= SIDE_VIEW_MAX) return null;
     return smooth('lean', Math.atan2(Math.abs(dx), -dy) * 180 / Math.PI); // 0° = 똑바로 섬
+}
+
+// 앞 무릎이 안쪽(몸 가운데 쪽)으로 모인 정도. 정면이 아니면 null
+// 엉덩이와 발목을 이은 선에서 무릎이 안쪽으로 벗어난 거리 ÷ 엉덩이 너비 (0 = 일직선, 클수록 안으로 모임)
+// 엉덩이 너비로 나눠서 카메라와의 거리가 바뀌어도 값이 같음
+function kneeInward(P, S, J, vis) {
+    if (![S.hip, S.knee, S.ankle, 23, 24].every(vis) || !isFrontView(P, J)) return null;
+    const hip = P[S.hip], knee = P[S.knee], ankle = P[S.ankle];
+    const hipWidth = Math.abs(P[23].x - P[24].x);
+    if (hipWidth <= 0 || ankle.y - hip.y <= 0) return null;
+    const lineX = hip.x + (ankle.x - hip.x) * (knee.y - hip.y) / (ankle.y - hip.y); // 무릎 높이에서 엉덩이-발목 선의 x
+    const inward = Math.sign((P[23].x + P[24].x) / 2 - hip.x); // 몸 가운데 쪽 방향 (+1 / -1)
+    return smooth('kneeIn', (knee.x - lineX) * inward / hipWidth);
 }
 
 // 1회가 끝났을 때 규칙으로 판정 → 지적할 것 목록 (빈 목록 = 좋은 자세)
@@ -72,17 +99,22 @@ function judgeFormRep() {
     formRep = null;
     const stats = formSets[formSets.length - 1];
     if (!rep || !stats) return [];
+    const rules = FORM_RULES[stats.type];
 
-    const issues = [];
-    const leanChecked = rep.leanFrames >= FORM_MIN_FRAMES;
-    if (leanChecked && rep.maxLean > SQUAT_LEAN_MAX) issues.push('lean');
-    // 무릎 각도(발목이 보일 때)나 허벅지 비율 중 하나라도 충분히 깊으면 OK
-    const deepByKnee = rep.kneeFrames >= FORM_MIN_FRAMES && rep.minKnee < SQUAT_DEPTH_KNEE;
-    const deepByRatio = rep.minRatio < SQUAT_DEPTH_RATIO;
-    if (!deepByKnee && !deepByRatio) issues.push('shallow');
+    // 규칙마다: true = 지적, false = 괜찮음, null = 판정 못 함 (관절이 충분히 안 보였거나 방향이 안 맞음)
+    const results = {
+        lean: rep.leanFrames >= FORM_MIN_FRAMES ? rep.maxLean > rules.leanMax : null,
+        kneeIn: rep.kneeInFrames >= FORM_MIN_FRAMES ? rep.maxKneeIn > rules.kneeInMax : null,
+        // 무릎 각도(발목이 보일 때)나 허벅지 비율 중 하나라도 충분히 깊으면 OK
+        shallow: !(rep.kneeFrames >= FORM_MIN_FRAMES && rep.minKnee < rules.depthKnee) && !(rep.minRatio < rules.depthRatio)
+    };
+    const issues = Object.keys(FORM_ISSUES[stats.type]).filter(key => {
+        if (results[key] === null) return false;
+        stats.checked[key]++;
+        return results[key];
+    });
 
     stats.reps++;
-    if (leanChecked) stats.leanChecked++;
     if (!issues.length) stats.good++;
     issues.forEach(key => { stats.issues[key]++; });
     return issues;
@@ -92,7 +124,10 @@ function judgeFormRep() {
 // - 같은 지적은 FORM_SPEAK_EVERY회에 한 번만, 문장은 돌아가며 바꿔 말함
 // - 바로 전 회에 지적한 걸 이번에 고쳤으면 칭찬
 function formFeedback(issues) {
-    showFormBadge(issues);
+    const stats = formSets[formSets.length - 1];
+    if (!stats) return '';
+    const texts = FORM_ISSUES[stats.type];
+    showFormBadge(issues.map(key => texts[key].short));
     if (!voiceAllows(SPEAK.COACH)) return '';
     const fixed = formLastSpoken && !issues.includes(formLastSpoken);
     formLastSpoken = null;
@@ -103,7 +138,7 @@ function formFeedback(issues) {
     if (!key) return '';
     formSpokenAt[key] = repNo;
     formLastSpoken = key;
-    return pickFormLine(key, FORM_ISSUES[key].speeches);
+    return pickFormLine(key, texts[key].speeches);
 }
 
 function pickFormLine(key, lines) {
@@ -113,56 +148,59 @@ function pickFormLine(key, lines) {
 }
 
 function sumFormStats(list) {
+    if (!list.length) return null;
     return list.reduce((total, stats) => {
         total.reps += stats.reps;
         total.good += stats.good;
-        total.leanChecked += stats.leanChecked;
-        Object.keys(total.issues).forEach(key => { total.issues[key] += stats.issues[key]; });
+        Object.keys(total.issues).forEach(key => {
+            total.issues[key] += stats.issues[key];
+            total.checked[key] += stats.checked[key];
+        });
         return total;
-    }, newFormStats());
+    }, newFormStats(list[0].type));
 }
 
 // 예: "10회 중 좋은 자세 7회 · 깊이 부족 2회 · 상체 숙임 1회"
 function formSummaryText(stats) {
     if (!stats || !stats.reps) return '';
     const parts = [`${stats.reps}회 중 좋은 자세 ${stats.good}회`];
-    Object.keys(FORM_ISSUES).forEach(key => {
-        if (stats.issues[key]) parts.push(`${FORM_ISSUES[key].label} ${stats.issues[key]}회`);
+    Object.entries(FORM_ISSUES[stats.type]).forEach(([key, issue]) => {
+        if (stats.issues[key]) parts.push(`${issue.label} ${stats.issues[key]}회`);
     });
     return parts.join(' · ');
 }
 
 // 운동을 마칠 때 기록용으로 정리 (판정한 횟수가 없으면 null)
 function takeFormReport(type) {
-    const sets = formSets.filter(stats => stats.reps > 0);
-    if (type !== 'squat' || !sets.length) return null;
+    const sets = formSets.filter(stats => stats.type === type && stats.reps > 0);
+    if (!sets.length) return null;
     return { type, sets, total: sumFormStats(sets) };
+}
+
+// 몸 크기 (카메라와의 거리에 비례): 몸통 길이와 '어깨 너비 ÷ SHOULDER_SCALE' 중 큰 값
+// - 몸통 길이만 쓰면 정면에서 상체를 숙일 때 몸통이 짧아 보여서 덜 앉은 것처럼 계산됨
+// - 어깨 너비는 숙여도 그대로라서 정면에서는 이 값이 쓰이고, 옆모습에서는 어깨 너비가 0에 가까워 몸통 길이가 쓰임
+// - 매 프레임 새로 재므로 카메라에 다가가거나 물러나도 비율이 그대로
+function bodyScale(P, S) {
+    const torso = Math.hypot(P[S.shoulder].x - P[S.hip].x, P[S.shoulder].y - P[S.hip].y);
+    const shoulderWidth = Math.hypot(P[11].x - P[12].x, P[11].y - P[12].y);
+    return Math.max(torso, shoulderWidth / SHOULDER_SCALE);
 }
 
 // 한쪽 다리가 얼마나 굽었는지: { ratio: 허벅지 세로 길이 비율(서 있을 때 1, 앉을수록 작아짐), kneeAngle(발목이 안 보이면 null) }
 // 허벅지의 세로 길이는 서 있으면 길고 앉으면 짧아짐 (정면·측면 모두 동작)
-// 몸통 길이로 나눠서, 카메라에서 멀어지거나 가까워져도 값이 변하지 않게 함
-// tag: 다리마다 기준값·평균값을 따로 기억하기 위한 이름 ('' / 'L' / 'R')
+// 몸 크기로 나눠서 카메라에서 멀어지거나 가까워져도 값이 변하지 않게 함
+// → 몸 크기를 잴 어깨가 안 보이면 null (예전에는 허벅지 길이만 봤는데, 카메라에 다가갔다 물러나면 앉은 걸로 잘못 셌음)
+// tag: 다리마다 기준값·평균값을 따로 기억하기 위한 이름 ('L' / 'R')
 function legBend(P, S, vis, tag) {
-    if (!vis(S.hip) || !vis(S.knee)) return null;
-    const thigh = Math.max(0, P[S.knee].y - P[S.hip].y);
-    const torso = vis(S.shoulder) ? Math.hypot(P[S.shoulder].x - P[S.hip].x, P[S.shoulder].y - P[S.hip].y) : 0;
-    let ratio;
-    if (torso > 0) {
-        // 정면에서 상체를 숙이면 몸통이 화면에서 짧아 보여서 비율이 커짐(덜 앉은 것처럼 보임)
-        // → 지금 몸통 길이 대신 '서 있을 때 몸통 길이'(가장 길었던 값, 천천히 갱신)로 나눔
-        const torsoRef = Math.max(torso, (smoothed['torsoRef' + tag] || 0) * 0.999);
-        smoothed['torsoRef' + tag] = torsoRef;
-        const thighNorm = thigh / torsoRef;
-        const ref = Math.max(thighNorm, (smoothed['ref' + tag] || 0) * 0.998); // 서 있을 때 값을 기억 (천천히 갱신)
-        smoothed['ref' + tag] = ref;
-        ratio = smooth('thigh' + tag, ref > 0 ? thighNorm / ref : 1);
-    } else {
-        // 어깨가 안 보이면 허벅지 길이만으로 판단 (이때는 너무 앞뒤로 움직이지 않기)
-        const ref = Math.max(thigh, (smoothed['rawRef' + tag] || 0) * 0.998);
-        smoothed['rawRef' + tag] = ref;
-        ratio = smooth('thigh' + tag, ref > 0 ? thigh / ref : 1);
-    }
+    if (!vis(S.hip) || !vis(S.knee) || !vis(S.shoulder)) return null;
+    const scale = bodyScale(P, S);
+    if (scale <= 0) return null;
+    // 평균을 먼저 내고 기준(서 있을 때 값)과 비교 → 한 프레임 튀는 값이 기준값에 남지 않음
+    const thighNorm = smooth('thigh' + tag, Math.max(0, P[S.knee].y - P[S.hip].y) / scale);
+    const ref = Math.max(thighNorm, (smoothed['ref' + tag] || 0) * 0.998); // 서 있을 때 값을 기억 (천천히 갱신)
+    smoothed['ref' + tag] = ref;
+    const ratio = ref > 0 ? thighNorm / ref : 1;
     const kneeAngle = vis(S.ankle) ? smooth('knee' + tag, calculateAngle(P[S.hip], P[S.knee], P[S.ankle])) : null;
     return { ratio, kneeAngle };
 }
@@ -319,26 +357,29 @@ function onPoseResults(results) {
 
     if (currentEx.type === 'squat' || currentEx.type === 'lunge') {
         const isLunge = currentEx.type === 'lunge';
-        // 런지는 두 다리를 다 보고 더 많이 굽힌 다리(앞다리)로 판정
-        // (뒷다리는 무릎을 바닥까지 내려도 허벅지가 세로로 길게 남아서, 한쪽만 보면 못 셈)
-        const legs = (isLunge
-            ? [legBend(P, LEFT, vis, 'L'), legBend(P, RIGHT, vis, 'R')]
-            : [legBend(P, J, vis, '')]).filter(Boolean);
+        // 두 다리를 다 봄
+        // - 스쿼트: 덜 굽힌 다리 기준 → 두 다리를 같이 굽혀야 셈 (걷거나 발을 고쳐 디딜 때 한쪽만 굽는 건 안 셈)
+        // - 런지: 더 굽힌 다리(앞다리) 기준 (뒷다리는 무릎을 바닥까지 내려도 허벅지가 세로로 길게 남아서)
+        const legs = [[LEFT, 'L'], [RIGHT, 'R']]
+            .map(([S, tag]) => { const bend = legBend(P, S, vis, tag); return bend && { S, ...bend }; })
+            .filter(Boolean);
 
-        // 엉덩이와 무릎만 보이면 인식 가능 (발목은 있으면 더 정확)
+        // 어깨·엉덩이·무릎이 보여야 인식 (발목은 있으면 더 정확)
         if (!legs.length) {
             motionState = 'UP';
+            downSince = 0;
             formRep = null; // 중간에 안 보였던 1회는 판정하지 않음
-            status.textContent = '엉덩이와 무릎이 화면에 보이게 해주세요';
-            if (coachHint('joints', '엉덩이와 무릎이 화면에 보이게 해 주세요.')) setStageView('preview', true);
+            status.textContent = '어깨부터 무릎까지 화면에 보이게 해주세요';
+            if (coachHint('joints', '어깨부터 무릎까지 화면에 보이게 해 주세요.')) setStageView('preview', true);
             return;
         }
         coachHint(null);
         setStageView('focus');
 
-        const ratio = Math.min(...legs.map(leg => leg.ratio));
+        const pick = isLunge ? Math.min : Math.max;
+        const ratio = pick(...legs.map(leg => leg.ratio));
         const knees = legs.map(leg => leg.kneeAngle).filter(angle => angle !== null);
-        const kneeAngle = knees.length ? Math.min(...knees) : null;
+        const kneeAngle = knees.length ? pick(...knees) : null;
 
         let isDown;
         let isUp;
@@ -352,14 +393,20 @@ function onPoseResults(results) {
             isUp = ratio > 0.8;
             bent = ratio < (isLunge ? LUNGE_SHALLOW_RATIO : SHALLOW_RATIO);
         }
+        // '앉음'은 DOWN_HOLD_MS 넘게 계속돼야 인정 (한두 프레임 튀는 값 무시)
+        const now = performance.now();
+        if (!isDown) downSince = 0;
+        else if (!downSince) downSince = now;
+        const downHeld = isDown && now - downSince >= DOWN_HOLD_MS;
 
-        if (!isLunge) {
-            // 다 일어선 동안은 기록을 새로 시작 → 기록 = 마지막으로 서 있던 때부터 1회가 끝날 때까지
-            if (motionState === 'UP' && isUp) formRep = null;
-            recordFormFrame(P, J, vis, ratio, kneeAngle);
-        }
+        // 다 일어선 동안은 기록을 새로 시작 → 기록 = 마지막으로 서 있던 때부터 1회가 끝날 때까지
+        if (motionState === 'UP' && isUp) formRep = null;
+        // 런지: 앞다리(더 굽힌 다리)를 굽힌 동안 무릎이 안쪽으로 모이는지
+        const frontLeg = isLunge ? legs.reduce((a, b) => (a.ratio <= b.ratio ? a : b)) : null;
+        const kneeIn = frontLeg && bent ? kneeInward(P, frontLeg.S, J, vis) : null;
+        recordFormFrame(P, J, vis, ratio, kneeAngle, kneeIn);
 
-        if (isDown && motionState === 'UP') {
+        if (downHeld && motionState === 'UP') {
             motionState = 'DOWN';
             shallowDip = false;
             status.textContent = '⬇️ 내려가는 중';
@@ -483,6 +530,10 @@ function startPlankTimer(targetReps) {
 
 function incrementRep(targetReps) {
     if (selectedStepIndex === null || isResting || isCompletingSet) return;
+    // 직전 횟수에서 REP_MIN_MS 안이면 같은 1회가 흔들려서 두 번 잡힌 것으로 보고 무시
+    const now = performance.now();
+    if (now - lastRepAt < REP_MIN_MS) return;
+    lastRepAt = now;
     countReps = Math.min(targetReps, countReps + 1);
     setRepsDisplay(countReps, true);
     document.getElementById('ai-status').textContent = `인식 완료 (${countReps}/${targetReps})`;
@@ -493,7 +544,7 @@ function incrementRep(targetReps) {
     if (left === 1) say += ', 마지막 하나!';
     else if (left === 5 && targetReps >= 10) say += ', 다섯 개 남았어요';
     // 자세 지적은 횟수 뒤에 이어서 말함 (따로 말하면 횟수 음성에 묻혀서 건너뛰어짐)
-    if (exercises[selectedStepIndex].type === 'squat') {
+    if (FORM_RULES[exercises[selectedStepIndex].type]) {
         const tip = formFeedback(judgeFormRep());
         if (tip) say += `, ${tip}`;
     }
