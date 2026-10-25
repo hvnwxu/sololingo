@@ -48,7 +48,8 @@ function handleSetCompletion() {
     if (currentSet < totalSets) {
         // 자세 판정이 있는 운동(스쿼트·런지)은 이번 세트 자세 요약을 휴식 화면에 보여 주고 말해 줌
         const setStats = formSets[formSets.length - 1];
-        const formText = setStats?.reps ? `${setStats.reps}회 중 좋은 자세 ${setStats.good}회. ` : '';
+        const unit = setStats && formUnit(setStats.type);
+        const formText = setStats?.reps ? `${setStats.reps}${unit} 중 좋은 자세 ${setStats.good}${unit}. ` : '';
         document.getElementById('rest-form').textContent = formSummaryText(setStats);
         speakText(`세트 완료! ${formText}휴식을 취하세요.`, SPEAK.IMPORTANT);
         startRestPhase();

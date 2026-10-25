@@ -16,8 +16,9 @@ function resetRecognitionState() {
     motionState = 'UP';
 }
 
-// ===== 자세 판정 (스쿼트·런지·푸쉬업) =====
+// ===== 자세 판정 (스쿼트·런지·푸쉬업·플랭크) =====
 // 1회 동작 동안 값을 기록했다가 → 1회가 끝나면(횟수를 셀 때) 규칙으로 판정
+// 플랭크는 횟수가 없으므로 1초를 1회처럼 판정 (reps = 판정한 초)
 let formRep = null;     // 지금 하고 있는 1회의 기록 (서 있을 때부터 다시 일어설 때까지)
 let formSets = [];      // 세트별 판정 결과 (마지막 칸이 지금 세트, 자세 판정이 없는 운동이면 빈 목록)
 let formSpokenAt = {};  // 지적별로 마지막으로 말한 회차 (같은 말을 매번 하지 않게)
@@ -64,6 +65,9 @@ function formValue(rep, key) {
 function formResults(type, rep, rules) {
     const v = key => formValue(rep, key);
     const over = (value, limit) => (value === null ? null : value > limit);
+    if (type === 'plank') {
+        return { sag: over(v('sag'), rules.lineMax), pike: over(v('pike'), rules.lineMax) };
+    }
     if (type === 'pushup') {
         return {
             sag: over(v('sag'), rules.lineMax),
@@ -83,13 +87,14 @@ function formResults(type, rep, rules) {
 }
 
 // 몸이 일직선에서 벗어난 각도 (+ = 엉덩이가 바닥 쪽으로 처짐, - = 위로 들림, 판단 못 하면 null)
-// 어깨-엉덩이-무릎(없으면 발목) 각도가 180°에서 얼마나 벗어났는지
-// 바닥 쪽은 손목이 있는 쪽으로 판단 → 폰을 어느 방향으로 눕혀도 동작 (화면의 위아래를 믿지 않음)
-function bodyLineBend(P, J, vis) {
-    const lower = vis(J.knee) ? J.knee : (vis(J.ankle) ? J.ankle : null);
-    if (!vis(J.shoulder) || !vis(J.hip) || !vis(J.wrist) || lower === null) return null;
-    const s = P[J.shoulder], h = P[J.hip], l = P[lower], w = P[J.wrist];
-    // 어깨→무릎 선을 기준으로 점이 어느 쪽에 있는지 (+1 / -1)
+// 어깨-엉덩이-다리 각도가 180°에서 얼마나 벗어났는지 (lower: 다리 쪽 기준 관절, 푸쉬업은 무릎·플랭크는 발목 우선)
+// 바닥 쪽은 손목(안 보이면 팔꿈치)이 있는 쪽으로 판단 → 폰을 어느 방향으로 눕혀도 동작 (화면의 위아래를 믿지 않음)
+// (푸쉬업·팔을 편 플랭크는 손이, 팔꿈치 플랭크는 팔꿈치가 바닥에 있음)
+function bodyLineBend(P, J, vis, lower) {
+    const support = vis(J.wrist) ? J.wrist : (vis(J.elbow) ? J.elbow : null);
+    if (!vis(J.shoulder) || !vis(J.hip) || support === null || lower === null) return null;
+    const s = P[J.shoulder], h = P[J.hip], l = P[lower], w = P[support];
+    // 어깨→다리 선을 기준으로 점이 어느 쪽에 있는지 (+1 / -1)
     const side = p => Math.sign((l.x - s.x) * (p.y - s.y) - (l.y - s.y) * (p.x - s.x));
     const floor = side(w);
     if (!floor) return null;
@@ -133,6 +138,7 @@ function judgeFormRep() {
     const stats = formSets[formSets.length - 1];
     if (!rep || !stats) return [];
     const results = formResults(stats.type, rep, FORM_RULES[stats.type]);
+    if (Object.values(results).every(result => result === null)) return []; // 하나도 판정 못 했으면 세지 않음
     const issues = Object.keys(FORM_ISSUES[stats.type]).filter(key => {
         if (results[key] === null) return false;
         stats.checked[key]++;
@@ -185,12 +191,18 @@ function sumFormStats(list) {
     }, newFormStats(list[0].type));
 }
 
-// 예: "10회 중 좋은 자세 7회 · 깊이 부족 2회 · 상체 숙임 1회"
+// 플랭크는 1초씩 판정하므로 '초', 나머지는 '회'
+function formUnit(type) {
+    return type === 'plank' ? '초' : '회';
+}
+
+// 예: "10회 중 좋은 자세 7회 · 깊이 부족 2회 · 상체 숙임 1회" / "30초 중 좋은 자세 26초 · 허리 처짐 4초"
 function formSummaryText(stats) {
     if (!stats || !stats.reps) return '';
-    const parts = [`${stats.reps}회 중 좋은 자세 ${stats.good}회`];
+    const unit = formUnit(stats.type);
+    const parts = [`${stats.reps}${unit} 중 좋은 자세 ${stats.good}${unit}`];
     Object.entries(FORM_ISSUES[stats.type]).forEach(([key, issue]) => {
-        if (stats.issues[key]) parts.push(`${issue.label} ${stats.issues[key]}회`);
+        if (stats.issues[key]) parts.push(`${issue.label} ${stats.issues[key]}${unit}`);
     });
     return parts.join(' · ');
 }
@@ -531,7 +543,7 @@ function onPoseResults(results) {
 
         // 몸 일직선 확인: 엉덩이와 무릎(없으면 발목)이 보일 때만
         // 크게 꺾인 채로 1.5초 넘게 있으면 바로 안내 (처짐/들림을 나눠서)
-        const bend = bodyLineBend(P, J, vis);
+        const bend = bodyLineBend(P, J, vis, vis(J.knee) ? J.knee : (vis(J.ankle) ? J.ankle : null));
         const lineKey = bend === null || Math.abs(bend) <= 180 - BODY_LINE_MIN ? null : (bend > 0 ? 'sag' : 'pike');
         const lineWarn = coachHint(lineKey && 'line-' + lineKey,
             lineKey === 'sag' ? '엉덩이가 처졌어요. 배에 힘을 주고 몸을 일직선으로 만들어 주세요.' : '엉덩이가 너무 올라갔어요. 몸을 일직선으로 내려 주세요.');
@@ -567,9 +579,11 @@ function onPoseResults(results) {
         // 발목이 안 보이면 무릎을 대신 사용 → 어깨~무릎까지만 보여도 인식
         const lower = vis(J.ankle) ? J.ankle : (vis(J.knee) ? J.knee : null);
         const jointsMissing = !vis(J.shoulder) || !vis(J.hip) || lower === null;
+        let mildKey = null; // 살짝 무너짐 (타이머는 계속, 음성으로만 안내)
         if (jointsMissing) {
             problem = '어깨·엉덩이·무릎이 보이게 해주세요';
             speech = '어깨, 엉덩이, 무릎이 보이게 해 주세요.';
+            formRep = null; // 안 보였던 1초는 판정하지 않음
         } else {
             const bodyAngle = smooth('body', calculateAngle(P[J.shoulder], P[J.hip], P[lower]));
 
@@ -582,17 +596,37 @@ function onPoseResults(results) {
                 isLying = Math.abs(P[J.shoulder].x - P[J.hip].x) > Math.abs(P[J.shoulder].y - P[J.hip].y);
             }
 
+            // 처짐(+)/들림(-): 손목이나 팔꿈치가 안 보이면 null → 방향 없이 '일직선으로' 안내
+            const bend = isLying ? bodyLineBend(P, J, vis, lower) : null;
             if (!isLying) {
                 problem = '엎드려서 팔꿈치나 손으로 몸을 받쳐주세요';
                 speech = '엎드려서 팔꿈치나 손으로 몸을 받쳐 주세요.';
             } else if (bodyAngle < BODY_LINE_MIN) {
-                problem = '⚠️ 엉덩이를 어깨·다리와 일직선으로 맞춰주세요';
-                speech = '엉덩이를 어깨, 다리와 일직선으로 맞춰 주세요.';
+                // 크게 무너짐 → 타이머 멈춤
+                if (bend === null) {
+                    problem = '⚠️ 엉덩이를 어깨·다리와 일직선으로 맞춰주세요';
+                    speech = '엉덩이를 어깨, 다리와 일직선으로 맞춰 주세요.';
+                } else if (bend > 0) {
+                    problem = '⚠️ 엉덩이가 처졌어요. 일직선으로 올려주세요';
+                    speech = '엉덩이가 처졌어요. 배에 힘을 주고 엉덩이를 올려 주세요.';
+                } else {
+                    problem = '⚠️ 엉덩이가 너무 올라갔어요. 조금 내려주세요';
+                    speech = '엉덩이가 너무 올라갔어요. 엉덩이를 조금 내려 주세요.';
+                }
+            } else if (bend !== null && Math.abs(bend) > FORM_RULES.plank.lineMax) {
+                mildKey = bend > 0 ? 'sag' : 'pike';
+            }
+            // 1초 기록: 가장 많이 처지거나 들린 정도 (타이머가 1초 셀 때마다 판정)
+            if (isLying && bend !== null) {
+                trackForm('sag', Math.max(0, bend), 'max');
+                trackForm('pike', Math.max(0, -bend), 'max');
             }
         }
 
         if (!problem) {
-            coachHint(null);
+            // 살짝 무너진 게 1.5초 넘게 계속되면 음성으로 안내 (문장은 5초마다 바꿔서)
+            const lines = mildKey && FORM_ISSUES.plank[mildKey].speeches;
+            coachHint(mildKey && 'mild-' + mildKey, lines ? lines[Math.floor(now / COACH_REPEAT_MS) % lines.length] : '');
             setStageView('focus');
         } else if (coachHint(problem, speech)) {
             setStageView(jointsMissing ? 'preview' : 'focus', true);
@@ -624,6 +658,7 @@ function startPlankTimer(targetReps) {
         }
         countReps = Math.min(targetReps, countReps + 1);
         setRepsDisplay(countReps, true);
+        judgeFormRep(); // 지난 1초 동안의 자세 판정 (요약·리포트용, 안내는 실시간으로 따로 함)
         const left = targetReps - countReps;
         if (left > 0 && left <= 3) { speakText(String(left)); beep('tick'); }
         else if (left === 10 && targetReps > 15) speakText('10초 남았어요');
