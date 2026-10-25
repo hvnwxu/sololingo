@@ -32,7 +32,13 @@ const LUNGE_DOWN_KNEE = 132;      // 런지: 앞다리 무릎 각도가 이보�
 const LUNGE_SHALLOW_RATIO = 0.77; // 런지: "더 깊이" 안내 기준 (내려감 기준보다 위에 있어야 해서 같이 올림)
 const LUNGE_SHALLOW_KNEE = 145;
 const SHALLOW_ELBOW = 125;    // 푸쉬업: 팔꿈치가 이만큼 굽었는데 100°까지 못 가면 "더 깊이"
-const BODY_LINE_MIN = 145;    // 푸쉬업·플랭크: 어깨-엉덩이-무릎 각도가 이보다 작으면 몸이 꺾인 것
+const BODY_LINE_MIN = 145;    // 플랭크: 처짐/들림 방향을 모를 때(손목·팔꿈치 안 보임) 어깨-엉덩이-다리 각도가 이보다 작으면 몸이 꺾인 것
+// 푸쉬업·플랭크 실시간 경고(플랭크는 타이머 멈춤): 몸이 이 각도보다 더 꺾이면
+// 처짐은 들림보다 훨씬 작게 꺾여 보여서(엉덩이가 바닥 쪽으로 내려갈 수 있는 폭이 작고, MediaPipe 엉덩이 관절은 골반 가운데라
+// 허리가 휘어도 덜 움직임) 기준을 따로 둠. 같은 35°로 했더니 처짐은 전혀 못 잡았음
+const LINE_SAG_ALERT = 22;
+const LINE_PIKE_ALERT = 35;
+const PUSHUP_MIN_HIP_HEIGHT = 0.3; // 푸쉬업: 팔을 다 폈을 때 엉덩이가 바닥(손목)에서 팔 길이의 이 배수보다 낮으면 안 셈 (엉덩이를 바닥에 대고 상체만 드는 동작)
 
 // 횟수 오작동 방지
 const SHOULDER_SCALE = 0.6;   // 몸 크기 = max(몸통 길이, 어깨 너비 ÷ 이 값) → 정면에서 숙이거나 카메라와 거리가 바뀌어도 비율 유지
@@ -48,12 +54,13 @@ const TOO_CLOSE_SCALE = 0.6;  // 몸 크기 ÷ 화면 짧은 쪽 길이가 이�
 //   런지는 상체를 세운 채로 내려가는 운동이라 스쿼트보다 엄격하게
 // kneeInMax: 앞 무릎이 엉덩이-발목 선에서 안쪽으로 벗어난 거리 ÷ 엉덩이 너비가 이보다 크면 "무릎 모임" (정면일 때만)
 // pushup: depthElbow = 1회 중 가장 작은 팔꿈치 각도가 이보다 크면 "깊이 부족",
-//   lineMax = 어깨-엉덩이-무릎이 180°에서 이 각도보다 더 꺾이면 "허리 처짐"(바닥 쪽) / "엉덩이 들림"(반대쪽)
+//   sagMax / pikeMax = 어깨-엉덩이-무릎이 180°에서 이 각도보다 더 꺾이면 "허리 처짐"(바닥 쪽) / "엉덩이 들림"(반대쪽)
+//   처짐은 들림보다 작게 꺾여 보여서 기준을 낮게 (20°로 같게 했을 때 처짐을 못 잡았음)
 const FORM_RULES = {
     squat: { depthKnee: 110, depthRatio: 0.5, leanMax: 50 },  // 횟수는 130° / 0.65부터 셈
     lunge: { depthKnee: 105, depthRatio: 0.45, leanMax: 30, kneeInMax: 0.5 }, // 횟수는 132° / 0.68부터 셈
-    pushup: { depthElbow: 90, lineMax: 20 }, // 횟수는 100°부터 셈, 실시간 경고는 35° 넘게 꺾일 때 (BODY_LINE_MIN)
-    plank: { lineMax: 20 } // 1초마다 판정. 20° 넘게 꺾이면 음성 안내(타이머는 계속), 35° 넘으면 타이머 멈춤 (BODY_LINE_MIN)
+    pushup: { depthElbow: 90, sagMax: 12, pikeMax: 20 }, // 횟수는 100°부터 셈, 실시간 경고는 LINE_SAG_ALERT / LINE_PIKE_ALERT
+    plank: { sagMax: 12, pikeMax: 20 } // 1초마다 판정. 이보다 꺾이면 음성 안내(타이머는 계속), LINE_SAG_ALERT / LINE_PIKE_ALERT 넘으면 타이머 멈춤
 };
 const SIDE_VIEW_MAX = 0.35;    // 어깨 너비 ÷ 몸통 길이가 이보다 작으면 옆모습, 크거나 같으면 정면
 const FORM_MIN_FRAMES = 3;     // 1회 동안 관절이 이 프레임 수 이상 보였을 때만 판정 (확실하지 않으면 지적 안 함)
