@@ -31,13 +31,17 @@ const LUNGE_DOWN_RATIO = 0.68;    // 런지: 앞다리 허벅지 비율이 이�
 const LUNGE_DOWN_KNEE = 132;      // 런지: 앞다리 무릎 각도가 이보다 작으면 '내려감' (125° → 132°)
 const LUNGE_SHALLOW_RATIO = 0.77; // 런지: "더 깊이" 안내 기준 (내려감 기준보다 위에 있어야 해서 같이 올림)
 const LUNGE_SHALLOW_KNEE = 145;
-const SHALLOW_ELBOW = 125;    // 푸쉬업: 팔꿈치가 이만큼 굽었는데 100°까지 못 가면 "더 깊이"
+const PUSHUP_DOWN_ELBOW = 108; // 푸쉬업: 팔꿈치 각도가 이보다 작으면 '내려감' (100° → 108°: 너무 어려워서 완화)
+const PUSHUP_UP_ELBOW = 138;   // 푸쉬업: 팔꿈치 각도가 이보다 크면 '올라옴' → 1회 (145° → 138°)
+const SHALLOW_ELBOW = 125;    // 푸쉬업: 팔꿈치가 이만큼 굽었는데 '내려감'까지 못 가면 "더 깊이"
 const BODY_LINE_MIN = 145;    // 플랭크: 처짐/들림 방향을 모를 때(손목·팔꿈치 안 보임) 어깨-엉덩이-다리 각도가 이보다 작으면 몸이 꺾인 것
 // 푸쉬업·플랭크 실시간 경고(플랭크는 타이머 멈춤): 몸이 이 각도보다 더 꺾이면
 // 처짐은 들림보다 훨씬 작게 꺾여 보여서(엉덩이가 바닥 쪽으로 내려갈 수 있는 폭이 작고, MediaPipe 엉덩이 관절은 골반 가운데라
 // 허리가 휘어도 덜 움직임) 기준을 따로 둠. 같은 35°로 했더니 처짐은 전혀 못 잡았음
 const LINE_SAG_ALERT = 22;
-const LINE_PIKE_ALERT = 35;
+const LINE_PIKE_ALERT = 35;   // 푸쉬업 들림 실시간 경고
+const PLANK_PIKE_STOP = 50;   // 플랭크 들림: 이보다 꺾이면 타이머 멈춤 (35° → 50°: 너무 예민해서 완화)
+const PLANK_MIN_HIP_HEIGHT = 0.12; // 플랭크: 엉덩이가 바닥(손목·팔꿈치와 발목을 이은 선)에서 몸통 길이의 이 배수보다 낮으면 타이머 멈춤 (엎드려 있기 약 0.1 이하, 팔꿈치 플랭크 약 0.2~0.4)
 const PUSHUP_MIN_HIP_HEIGHT = 0.3; // 푸쉬업: 팔을 다 폈을 때 엉덩이가 바닥(손목)에서 팔 길이의 이 배수보다 낮으면 안 셈 (엉덩이를 바닥에 대고 상체만 드는 동작)
 
 // 횟수 오작동 방지
@@ -59,8 +63,8 @@ const TOO_CLOSE_SCALE = 0.6;  // 몸 크기 ÷ 화면 짧은 쪽 길이가 이�
 const FORM_RULES = {
     squat: { depthKnee: 110, depthRatio: 0.5, leanMax: 50 },  // 횟수는 130° / 0.65부터 셈
     lunge: { depthKnee: 105, depthRatio: 0.45, leanMax: 30, kneeInMax: 0.5 }, // 횟수는 132° / 0.68부터 셈
-    pushup: { depthElbow: 90, sagMax: 12, pikeMax: 20 }, // 횟수는 100°부터 셈, 실시간 경고는 LINE_SAG_ALERT / LINE_PIKE_ALERT
-    plank: { sagMax: 12, pikeMax: 20 } // 1초마다 판정. 이보다 꺾이면 음성 안내(타이머는 계속), LINE_SAG_ALERT / LINE_PIKE_ALERT 넘으면 타이머 멈춤
+    pushup: { depthElbow: 98, sagMax: 12, pikeMax: 20 }, // 횟수는 108°부터 셈 (깊이 90° → 98° 완화), 실시간 경고는 LINE_SAG_ALERT / LINE_PIKE_ALERT
+    plank: { sagMax: 12, pikeMax: 35 } // 1초마다 판정. 이보다 꺾이면 음성 안내(타이머는 계속), LINE_SAG_ALERT / PLANK_PIKE_STOP 넘으면 타이머 멈춤 (들림 20° → 35° 완화)
 };
 const SIDE_VIEW_MAX = 0.35;    // 어깨 너비 ÷ 몸통 길이가 이보다 작으면 옆모습, 크거나 같으면 정면
 const FORM_MIN_FRAMES = 3;     // 1회 동안 관절이 이 프레임 수 이상 보였을 때만 판정 (확실하지 않으면 지적 안 함)
