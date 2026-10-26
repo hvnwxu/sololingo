@@ -103,11 +103,28 @@ function bodyLineBend(P, J, vis, lower) {
 }
 
 // 처짐(+)/들림(-) 각도가 실시간 경고 기준을 넘었는지 → 'sag' / 'pike' / null
-function lineAlert(bend) {
+function lineAlert(bend, pikeLimit = LINE_PIKE_ALERT) {
     if (bend === null) return null;
     if (bend > LINE_SAG_ALERT) return 'sag';
-    if (-bend > LINE_PIKE_ALERT) return 'pike';
+    if (-bend > pikeLimit) return 'pike';
     return null;
+}
+
+// 플랭크: 엉덩이가 바닥에서 얼마나 떠 있는지 (몸통 길이 대비, 판단 못 하면 null)
+// 손목(안 보이면 팔꿈치)과 발목(또는 무릎)은 바닥에 닿아 있으므로 둘을 이은 선을 바닥으로 보고, 엉덩이까지의 거리를 잼
+// (팔 편 플랭크는 팔꿈치가 떠 있으므로 손목 먼저. 팔꿈치 플랭크는 손목·팔꿈치 둘 다 바닥)
+// 바닥에 엎드리면 몸이 일직선이라 처짐으로 안 잡히고 시간이 갔음 → 이 값으로 거름
+function hipAboveFloorLine(P, J, vis, lower) {
+    const support = vis(J.wrist) ? J.wrist : (vis(J.elbow) ? J.elbow : null);
+    if (support === null || lower === null || !vis(J.hip) || !vis(J.shoulder)) return null;
+    const a = P[support], b = P[lower], h = P[J.hip], s = P[J.shoulder];
+    const floorLength = Math.hypot(b.x - a.x, b.y - a.y);
+    const torso = Math.hypot(s.x - h.x, s.y - h.y);
+    if (floorLength <= 0 || torso <= 0) return null;
+    const cross = p => ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / floorLength;
+    // 어깨가 있는 쪽을 '위'로 봄 (엉덩이가 바닥선 아래로 가는 일은 없으므로 반대쪽이면 0)
+    const up = Math.sign(cross(s)) || 1;
+    return Math.max(0, cross(h) * up) / torso;
 }
 
 // 엉덩이가 바닥에서 얼마나 떠 있는지 (팔 길이 대비, 판단 못 하면 null)
@@ -570,18 +587,18 @@ function onPoseResults(results) {
         setStageView('focus', lineWarn);
 
         // 1회 기록: 팔을 다 편 동안은 새로 시작 → 가장 많이 굽힌 팔꿈치 각도, 가장 많이 처지거나 들린 정도
-        if (motionState === 'UP' && angle > 145) formRep = null;
+        if (motionState === 'UP' && angle > PUSHUP_UP_ELBOW) formRep = null;
         trackForm('elbow', angle, 'min');
         if (bend !== null) {
             trackForm('sag', Math.max(0, bend), 'max');
             trackForm('pike', Math.max(0, -bend), 'max');
         }
 
-        if (angle < 100 && motionState === 'UP') {
+        if (angle < PUSHUP_DOWN_ELBOW && motionState === 'UP') {
             motionState = 'DOWN';
             shallowDip = false;
             status.textContent = '⬇️ 팔을 굽히는 중';
-        } else if (angle > 145 && motionState === 'DOWN') {
+        } else if (angle > PUSHUP_UP_ELBOW && motionState === 'DOWN') {
             motionState = 'UP';
             // 팔을 다 폈을 때 엉덩이가 바닥에 붙어 있으면 푸쉬업이 아님 (엉덩이를 대고 상체만 드는 동작) → 안 셈
             // 엉덩이가 안 보이면 판단할 수 없으므로 그대로 셈
@@ -595,7 +612,7 @@ function onPoseResults(results) {
             }
         } else if (motionState === 'UP') {
             if (angle < SHALLOW_ELBOW) shallowDip = true;
-            else if (angle > 145 && shallowDip) {
+            else if (angle > PUSHUP_UP_ELBOW && shallowDip) {
                 shallowDip = false;
                 coachNow('shallow', '조금 더 깊이 내려가 주세요.');
             }
@@ -627,18 +644,23 @@ function onPoseResults(results) {
 
             // 처짐(+)/들림(-): 손목이나 팔꿈치가 안 보이면 null → 방향 없이 '일직선으로' 안내
             const bend = isLying ? bodyLineBend(P, J, vis, lower) : null;
+            const hipHeight = isLying ? hipAboveFloorLine(P, J, vis, lower) : null;
             if (!isLying) {
                 problem = '엎드려서 팔꿈치나 손으로 몸을 받쳐주세요';
                 speech = '엎드려서 팔꿈치나 손으로 몸을 받쳐 주세요.';
+            } else if (hipHeight !== null && hipHeight < PLANK_MIN_HIP_HEIGHT) {
+                // 바닥에 엎드려 있음 → 타이머 멈춤
+                problem = '⚠️ 엉덩이를 바닥에서 들어 주세요';
+                speech = '엉덩이를 바닥에서 들고, 몸을 일직선으로 버텨 주세요.';
             } else if (bend === null && bodyAngle < BODY_LINE_MIN) {
                 // 크게 무너짐 (방향을 모를 때) → 타이머 멈춤
                 problem = '⚠️ 엉덩이를 어깨·다리와 일직선으로 맞춰주세요';
                 speech = '엉덩이를 어깨, 다리와 일직선으로 맞춰 주세요.';
-            } else if (lineAlert(bend) === 'sag') {
+            } else if (lineAlert(bend, PLANK_PIKE_STOP) === 'sag') {
                 // 크게 무너짐 → 타이머 멈춤
                 problem = '⚠️ 엉덩이가 처졌어요. 일직선으로 올려주세요';
                 speech = '엉덩이가 처졌어요. 배에 힘을 주고 엉덩이를 올려 주세요.';
-            } else if (lineAlert(bend) === 'pike') {
+            } else if (lineAlert(bend, PLANK_PIKE_STOP) === 'pike') {
                 problem = '⚠️ 엉덩이가 너무 올라갔어요. 조금 내려주세요';
                 speech = '엉덩이가 너무 올라갔어요. 엉덩이를 조금 내려 주세요.';
             } else if (bend !== null && (bend > FORM_RULES.plank.sagMax || -bend > FORM_RULES.plank.pikeMax)) {
