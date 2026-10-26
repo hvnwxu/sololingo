@@ -63,7 +63,7 @@ const TOO_CLOSE_SCALE = 0.6;  // 몸 크기 ÷ 화면 짧은 쪽 길이가 이�
 const FORM_RULES = {
     squat: { depthKnee: 110, depthRatio: 0.5, leanMax: 50 },  // 횟수는 130° / 0.65부터 셈
     lunge: { depthKnee: 105, depthRatio: 0.45, leanMax: 30, kneeInMax: 0.5 }, // 횟수는 132° / 0.68부터 셈
-    pushup: { depthElbow: 98, sagMax: 12, pikeMax: 20 }, // 횟수는 108°부터 셈 (깊이 90° → 98° 완화), 실시간 경고는 LINE_SAG_ALERT / LINE_PIKE_ALERT
+    pushup: { depthElbow: 102, sagMax: 14, pikeMax: 23 }, // 횟수는 108°부터 셈 (깊이 90° → 98° → 102°, 처짐 12° → 14°, 들림 20° → 23° 완화), 실시간 경고는 LINE_SAG_ALERT / LINE_PIKE_ALERT
     plank: { sagMax: 12, pikeMax: 35 } // 1초마다 판정. 이보다 꺾이면 음성 안내(타이머는 계속), LINE_SAG_ALERT / PLANK_PIKE_STOP 넘으면 타이머 멈춤 (들림 20° → 35° 완화)
 };
 const SIDE_VIEW_MAX = 0.35;    // 어깨 너비 ÷ 몸통 길이가 이보다 작으면 옆모습, 크거나 같으면 정면
